@@ -438,6 +438,13 @@ class RadialTreeVisualization {
         this.fireflyRotationSpeed = 1;    // Скорость вращения светлячков
         this.fireflies = [];             // Массив светлячков { mesh, nodeId, angle, speed }
         
+        // Параметры для выделения узлов
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        this.nodeMeshes = [];            // Массив всех узлов { mesh, originalPosition, originalScale, originalMaterial, node }
+        this.selectedNode = null;         // Текущий выделенный узел
+        this.animationSpeed = 0.05;      // Скорость анимации (lerp factor)
+        
         this.maxNodesPerLevel = computeMaxNodesPerLevel(4); // Глубина 4 уровня (сериал -> сезон -> режиссер -> серия)
         this.levelLimits = {
             1: this.maxNodesPerLevel[1] ?? 0,
@@ -505,6 +512,9 @@ class RadialTreeVisualization {
         
         // Инициализация управления камерой мышью
         this.setupMouseControls();
+        
+        // Инициализация обработчика клика по узлам
+        this.setupNodeClickHandler();
     }
     
     setupMouseControls() {
@@ -513,6 +523,29 @@ class RadialTreeVisualization {
         // Обработка нажатия мыши
         this.container.addEventListener('mousedown', (event) => {
             if (event.button === 0) { // Левая кнопка мыши
+                // Сначала проверяем клик по узлу
+                this.mouse.x = (event.clientX / this.container.clientWidth) * 2 - 1;
+                this.mouse.y = -(event.clientY / this.container.clientHeight) * 2 + 1;
+                
+                // Обновляем матрицы всех объектов перед raycasting
+                this.scene.updateMatrixWorld(true);
+                
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                
+                // Проверяем пересечения со всеми узлами
+                const allMeshes = this.nodeMeshes.map(n => n.mesh);
+                const intersects = this.raycaster.intersectObjects(allMeshes, true);
+                
+                if (intersects.length > 0) {
+                    // Клик по узлу - не начинаем перетаскивание
+                    const clickedMesh = intersects[0].object;
+                    this.handleNodeClick(clickedMesh);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+                
+                // Клик не по узлу - начинаем перетаскивание
                 this.isDragging = true;
                 this.previousMousePosition = {
                     x: event.clientX,
@@ -599,6 +632,9 @@ class RadialTreeVisualization {
     createTrees(depth) {
         // Сбрасываем кэш при пересоздании деревьев
         cachedTrees = null;
+        
+        // Очищаем массив узлов перед созданием новых
+        this.nodeMeshes = [];
         cachedDepth = null;
         
         // Удаляем старые деревья
@@ -753,7 +789,6 @@ class RadialTreeVisualization {
             const actorCount = actorsData.filter(actor => actor.parentId === node.id).length;
             totalFirefliesForTree += actorCount;
         });
-        console.log(`Дерево ${treeIndex}: узлов уровня 3 = ${level3Nodes.length}, всего светлячков = ${totalFirefliesForTree}`);
         
         // Создаем сферы (вершины)
         filteredNodes.forEach(node => {
@@ -792,6 +827,16 @@ class RadialTreeVisualization {
             sphere.position.copy(node.position);
                 treeGroup.add(sphere);
             
+            // Сохраняем ссылку на узел в mesh для raycasting
+            sphere.userData.node = node;
+            sphere.userData.isRoot = isRoot;
+            sphere.userData.originalPosition = node.position.clone();
+            sphere.userData.originalScale = new THREE.Vector3(1, 1, 1);
+            sphere.userData.originalMaterial = material.clone();
+            sphere.userData.treeGroup = treeGroup;
+            sphere.userData.nodeId = node.id;
+            sphere.userData.nodeText = node.text;
+            
             // Добавляем обводку (Edges)
             const edges = new THREE.EdgesGeometry(geometry);
             const edgeMaterial = new THREE.LineBasicMaterial({
@@ -802,7 +847,10 @@ class RadialTreeVisualization {
             const edgeLines = new THREE.LineSegments(edges, edgeMaterial);
             sphere.add(edgeLines);
             
-                // Добавляем текст на узле для всех уровней
+            // Переменная для хранения спрайта текста
+            let textSprite = null;
+            
+            // Добавляем текст на узле для всех уровней
             if (node.text) {
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
@@ -814,10 +862,14 @@ class RadialTreeVisualization {
                 const metrics = context.measureText(node.text);
                 const textWidth = metrics.width;
                 const textHeight = fontSize;
-                
-                // Устанавливаем размер canvas с отступами
-                canvas.width = textWidth + 20;
-                canvas.height = textHeight + 20;
+
+                // Увеличиваем разрешение canvas для четкости при масштабировании
+                const scaleFactor = 4;
+                canvas.width = (textWidth + 20) * scaleFactor;
+                canvas.height = (textHeight + 20) * scaleFactor;
+
+                // Масштабируем контекст
+                context.scale(scaleFactor, scaleFactor);
                 
                 // Перерисовываем текст
                     context.fillStyle = '#ffffff';
@@ -827,9 +879,9 @@ class RadialTreeVisualization {
                 context.textAlign = 'center';
                 context.textBaseline = 'middle';
                 
-                // Рисуем текст с обводкой
-                context.strokeText(node.text, canvas.width / 2, canvas.height / 2);
-                context.fillText(node.text, canvas.width / 2, canvas.height / 2);
+                // Рисуем текст с обводкой (координаты без учета масштаба контекста)
+                context.strokeText(node.text, (textWidth + 20) / 2, (textHeight + 20) / 2);
+                context.fillText(node.text, (textWidth + 20) / 2, (textHeight + 20) / 2);
                 
                 // Создаем текстуру из canvas
                 const texture = new THREE.CanvasTexture(canvas);
@@ -846,10 +898,25 @@ class RadialTreeVisualization {
                 // Позиционируем текст над сферой
                 sprite.position.copy(node.position);
                     sprite.position.y += radius + 90; // Увеличено в 3 раза (30 * 3)
-                    sprite.scale.set(canvas.width * 1.5, canvas.height * 1.5, 1); // Увеличено в 3 раза (0.5 * 3)
-                    
+                    sprite.scale.set((canvas.width / scaleFactor) * 1.5, (canvas.height / scaleFactor) * 1.5, 1); // Увеличено в 3 раза (0.5 * 3), скорректировано с учетом высокого разрешения
+                    sprite.renderOrder = 1; // Текст всегда поверх сфер
+
                     treeGroup.add(sprite);
+                    textSprite = sprite; // Сохраняем ссылку на спрайт
                 }
+            
+            // Сохраняем в массив всех узлов
+            this.nodeMeshes.push({
+                mesh: sphere,
+                originalPosition: node.position.clone(),
+                originalScale: new THREE.Vector3(1, 1, 1),
+                originalMaterial: material.clone(),
+                originalSpriteScale: textSprite ? textSprite.scale.clone() : null,
+                node: node,
+                treeGroup: treeGroup,
+                textSprite: textSprite // Сохраняем ссылку на спрайт текста
+            });
+            
                 
                 // Создаем светлячков для узлов 4 уровня (серии)
                 // Уровни: 0=сериал, 1=сезоны, 2=режиссеры, 3=эпизоды
@@ -909,8 +976,6 @@ class RadialTreeVisualization {
             this.treeGroups.push(treeGroup);
         });
         
-        console.log(`Всего создано светлячков: ${this.fireflies.length}`);
-        console.log(`Проверка: должно быть 75+126+57+141 = ${75+126+57+141}`);
     }
     
     setupZoomControls() {
@@ -949,8 +1014,47 @@ class RadialTreeVisualization {
     }
     
     updateCameraZoom() {
-        // Обновляем позицию камеры с учётом зума
-        this.updateCameraPosition();
+        
+        // Если есть выделенный узел, нужно обновить его целевую позицию камеры с учетом зума
+        // И СРАЗУ применить новую позицию, чтобы избежать конфликта с анимацией
+        if (this.selectedNode) {
+            const nodeData = this.selectedNode;
+            
+            // Получаем текущую мировую позицию узла
+            const worldPosition = new THREE.Vector3();
+            nodeData.mesh.getWorldPosition(worldPosition);
+            
+            // Вычисляем целевую позицию камеры с учетом зума
+            // Используем тот же эффективный зум, что был при выборе узла
+            const baseDirection = new THREE.Vector3(0, 800, 1000).normalize();
+            const baseDistance = Math.sqrt(800 * 800 + 1000 * 1000);
+            
+            // Используем эффективный зум узла, но обновляем его с учетом текущего зума
+            const zoomForNodeSelection = 2.0; // Тот же множитель, что при выборе
+            const effectiveZoom = this.currentZoom * zoomForNodeSelection;
+            const distance = baseDistance / effectiveZoom;
+            
+            // Обновляем целевую позицию камеры для выделенного узла
+            nodeData.targetCameraPosition = worldPosition.clone().add(
+                baseDirection.clone().multiplyScalar(distance)
+            );
+            nodeData.targetCameraTarget = worldPosition.clone();
+            nodeData.effectiveZoom = effectiveZoom;
+            
+            // ВАЖНО: Сразу применяем новую позицию камеры, чтобы зум работал мгновенно
+            // А не ждал анимации lerp
+            this.camera.position.copy(nodeData.targetCameraPosition);
+            this.cameraTarget.copy(nodeData.targetCameraTarget);
+            this.camera.lookAt(this.cameraTarget);
+            this.camera.updateProjectionMatrix();
+            
+            // Отмечаем, что позиция камеры уже применена, чтобы анимация не конфликтовала
+            nodeData.cameraPositionApplied = true;
+            
+        } else {
+            // Если узла нет, просто обновляем позицию камеры
+            this.updateCameraPosition();
+        }
     }
     
     setupLayoutControls() {
@@ -1229,6 +1333,212 @@ class RadialTreeVisualization {
         return fireflyGroup;
     }
     
+    setupNodeClickHandler() {
+        // Обработчик клика уже добавлен в setupMouseControls
+        // Здесь только инициализация
+    }
+    
+    handleNodeClick(mesh) {
+        // Если кликнули по уже выделенному узлу - ничего не делаем
+        if (this.selectedNode && this.selectedNode.mesh === mesh) {
+            return;
+        }
+        
+        // Возвращаем предыдущий узел на место, если есть
+        if (this.selectedNode) {
+            this.deselectNode(this.selectedNode);
+        }
+        
+        // Выделяем новый узел
+        const nodeData = this.nodeMeshes.find(n => n.mesh === mesh);
+        if (nodeData) {
+            this.selectNode(nodeData);
+        }
+    }
+    
+    selectNode(nodeData) {
+        this.selectedNode = nodeData;
+        
+        // Получаем текущую мировую позицию узла (узел остается на месте!)
+        const worldPosition = new THREE.Vector3();
+        nodeData.mesh.getWorldPosition(worldPosition);
+        
+        // Сохраняем исходную позицию камеры для возврата
+        if (!this.originalCameraPosition) {
+            this.originalCameraPosition = this.camera.position.clone();
+            this.originalCameraTarget = this.cameraTarget.clone();
+        }
+        
+        // Узел НЕ перемещается - остается на месте
+        // Только масштабирование и изменение стиля
+        nodeData.targetScale = new THREE.Vector3(2, 2, 2);
+        if (nodeData.originalSpriteScale) {
+            nodeData.targetSpriteScale = nodeData.originalSpriteScale.clone().multiplyScalar(2);
+        }
+        nodeData.isAnimating = true;
+        
+        // Находим соседние узлы и отодвигаем их, чтобы не было пересечений
+        this.pushAwayNeighborNodes(nodeData);
+        
+        // Вычисляем целевую позицию камеры (чтобы узел был в центре экрана)
+        // При выборе узла ПРИБЛИЖАЕМ камеру (увеличиваем зум) - используем меньшее расстояние
+        const baseDirection = new THREE.Vector3(0, 800, 1000).normalize();
+        const baseDistance = Math.sqrt(800 * 800 + 1000 * 1000);
+        
+        // При выборе узла применяем дополнительный зум для приближения
+        // Используем зум 2x для приближения к узлу (можно настроить)
+        const zoomForNodeSelection = 2.0;
+        const effectiveZoom = this.currentZoom * zoomForNodeSelection;
+        const distance = baseDistance / effectiveZoom;
+        
+        
+        // Позиция камеры = позиция узла + смещение (сохраняем тот же угол обзора, ПРИБЛИЖАЕМ камеру)
+        nodeData.targetCameraPosition = worldPosition.clone().add(
+            baseDirection.clone().multiplyScalar(distance)
+        );
+        nodeData.targetCameraTarget = worldPosition.clone();
+        
+        // Сохраняем эффективный зум для этого узла
+        nodeData.effectiveZoom = effectiveZoom;
+        
+        
+        // ВСЕГДА используем плавную анимацию при выборе узла
+        // Позиция камеры будет анимироваться к целевой позиции с учетом текущего зума
+        nodeData.cameraPositionApplied = false;
+        
+        // Создаем выделенный материал
+        const originalColor = nodeData.originalMaterial.color.getHex();
+        nodeData.highlightMaterial = nodeData.mesh.material.clone();
+        nodeData.highlightMaterial.emissive.setHex(originalColor);
+        nodeData.highlightMaterial.emissiveIntensity = 1.5;
+        nodeData.highlightMaterial.metalness = 0.8;
+        nodeData.highlightMaterial.roughness = 0.1;
+        
+        // Увеличиваем обводку
+        if (nodeData.mesh.children.length > 0) {
+            const edgeLines = nodeData.mesh.children[0];
+            if (edgeLines instanceof THREE.LineSegments) {
+                edgeLines.material.opacity = 1.0;
+                edgeLines.material.color.setHex(0xffff00); // Желтый цвет обводки
+            }
+        }
+    }
+    
+    pushAwayNeighborNodes(selectedNodeData) {
+        // Получаем радиус увеличенного узла
+        const selectedRadius = selectedNodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS;
+        const selectedScaledRadius = selectedRadius * 2; // Увеличенный узел в 2 раза
+        
+        // Получаем мировую позицию выбранного узла
+        const selectedWorldPos = new THREE.Vector3();
+        selectedNodeData.mesh.getWorldPosition(selectedWorldPos);
+        
+        // Находим все соседние узлы, которые могут пересекаться
+        const nodesToPush = [];
+        
+        this.nodeMeshes.forEach(otherNodeData => {
+            // Пропускаем сам выбранный узел
+            if (otherNodeData === selectedNodeData) return;
+            
+            // Получаем радиус другого узла
+            const otherRadius = otherNodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS;
+            
+            // Получаем мировую позицию другого узла
+            const otherWorldPos = new THREE.Vector3();
+            otherNodeData.mesh.getWorldPosition(otherWorldPos);
+            
+            // Вычисляем расстояние между узлами
+            const distance = selectedWorldPos.distanceTo(otherWorldPos);
+            
+            // Если расстояние меньше суммы радиусов (с запасом 10%), нужно отодвинуть
+            const minDistance = selectedScaledRadius + otherRadius;
+            const safeDistance = minDistance * 1.1; // 10% запас
+            
+            if (distance < safeDistance) {
+                // Вычисляем направление от выбранного узла к другому
+                const direction = new THREE.Vector3()
+                    .subVectors(otherWorldPos, selectedWorldPos)
+                    .normalize();
+                
+                // Вычисляем целевую позицию для другого узла
+                const targetWorldPos = selectedWorldPos.clone()
+                    .add(direction.multiplyScalar(safeDistance));
+                
+                // Преобразуем в локальные координаты treeGroup
+                const targetLocalPos = new THREE.Vector3();
+                otherNodeData.treeGroup.worldToLocal(targetLocalPos.copy(targetWorldPos));
+                
+                
+                nodesToPush.push({
+                    nodeData: otherNodeData,
+                    targetPosition: targetLocalPos,
+                    originalPosition: otherNodeData.originalPosition.clone()
+                });
+            } else {
+            }
+        });
+        
+        // Сохраняем информацию о узлах, которые нужно отодвинуть
+        selectedNodeData.pushedNodes = nodesToPush;
+        
+        // Устанавливаем целевые позиции для отодвигания
+        nodesToPush.forEach(({ nodeData, targetPosition }) => {
+            nodeData.targetPushPosition = targetPosition;
+            nodeData.isPushing = true;
+            
+            // Сохраняем исходную позицию спрайта, если он есть
+            if (nodeData.textSprite) {
+                if (!nodeData.originalSpritePosition) {
+                    nodeData.originalSpritePosition = nodeData.textSprite.position.clone();
+                }
+            }
+        });
+        
+    }
+    
+    deselectNode(nodeData) {
+        // Возвращаем масштаб узла к исходному (узел остается на месте!)
+        nodeData.targetScale = new THREE.Vector3(1, 1, 1);
+        if (nodeData.originalSpriteScale) {
+            nodeData.targetSpriteScale = nodeData.originalSpriteScale.clone();
+        }
+        nodeData.isAnimating = true;
+        
+        // Возвращаем камеру к исходной позиции
+        if (this.originalCameraPosition) {
+            nodeData.targetCameraPosition = this.originalCameraPosition.clone();
+            nodeData.targetCameraTarget = this.originalCameraTarget.clone();
+        } else {
+            nodeData.targetCameraPosition = this.cameraPosition.clone();
+            nodeData.targetCameraTarget = this.cameraTarget.clone();
+        }
+        
+        // Возвращаем соседние узлы на место
+        if (nodeData.pushedNodes) {
+            nodeData.pushedNodes.forEach(({ nodeData: pushedNodeData, originalPosition }) => {
+                pushedNodeData.targetPushPosition = originalPosition;
+                pushedNodeData.isPushing = true;
+            });
+            nodeData.pushedNodes = null;
+        }
+        
+        // Восстанавливаем исходный материал
+        nodeData.mesh.material = nodeData.originalMaterial;
+        
+        // Восстанавливаем обводку
+        if (nodeData.mesh.children.length > 0) {
+            const edgeLines = nodeData.mesh.children[0];
+            if (edgeLines instanceof THREE.LineSegments) {
+                edgeLines.material.opacity = 0.3;
+                edgeLines.material.color.setHex(0xffffff);
+            }
+        }
+        
+        if (this.selectedNode === nodeData) {
+            this.selectedNode = null;
+        }
+    }
+    
     animate() {
         requestAnimationFrame(() => this.animate());
         
@@ -1247,6 +1557,185 @@ class RadialTreeVisualization {
             firefly.mesh.position.x = firefly.nodePosition.x + orbitX;
             firefly.mesh.position.y = firefly.nodePosition.y + orbitY;
             firefly.mesh.position.z = firefly.nodePosition.z + orbitZ;
+        });
+        
+        // Анимация выделенного узла
+        if (this.selectedNode && this.selectedNode.isAnimating) {
+            const nodeData = this.selectedNode;
+            
+            // Узел НЕ перемещается - остается на месте!
+            // Только плавное масштабирование узла
+            const currentScale = nodeData.mesh.scale;
+            currentScale.lerp(nodeData.targetScale, this.animationSpeed);
+
+            // Плавное масштабирование текста
+            if (nodeData.textSprite && nodeData.targetSpriteScale) {
+                nodeData.textSprite.scale.lerp(nodeData.targetSpriteScale, this.animationSpeed);
+            }
+            
+            // Плавное перемещение камеры к узлу (только если позиция не была применена сразу)
+            if (!nodeData.cameraPositionApplied) {
+                this.camera.position.lerp(nodeData.targetCameraPosition, this.animationSpeed);
+                this.cameraTarget.lerp(nodeData.targetCameraTarget, this.animationSpeed);
+                this.camera.lookAt(this.cameraTarget);
+            } else {
+                // Позиция уже применена, но нужно убедиться, что камера смотрит правильно
+                this.camera.lookAt(this.cameraTarget);
+            }
+            
+            // Плавное изменение материала
+            if (nodeData.highlightMaterial) {
+                const currentMaterial = nodeData.mesh.material;
+                if (currentMaterial !== nodeData.highlightMaterial) {
+                    // Плавный переход к выделенному материалу
+                    const t = Math.min(1, (currentScale.x - 1) / 1); // t от 0 до 1 при масштабе от 1 до 2
+                    if (currentMaterial.emissiveIntensity !== undefined) {
+                        currentMaterial.emissiveIntensity = THREE.MathUtils.lerp(
+                            nodeData.originalMaterial.emissiveIntensity || 0,
+                            nodeData.highlightMaterial.emissiveIntensity,
+                            t
+                        );
+                    }
+                } else {
+                    // Уже используем highlightMaterial, применяем его свойства
+                    currentMaterial.emissiveIntensity = nodeData.highlightMaterial.emissiveIntensity;
+                }
+            }
+            
+            // Проверяем, достигли ли мы целевых значений
+            const scaleDiff = nodeData.mesh.scale.distanceTo(nodeData.targetScale);
+            
+            // Если позиция камеры была применена сразу, не проверяем расстояние камеры
+            let cameraReached = nodeData.cameraPositionApplied || false;
+            if (!cameraReached) {
+                const cameraPosDiff = this.camera.position.distanceTo(nodeData.targetCameraPosition);
+                const cameraTargetDiff = this.cameraTarget.distanceTo(nodeData.targetCameraTarget);
+                cameraReached = cameraPosDiff < 0.1 && cameraTargetDiff < 0.1;
+            }
+            
+            if (scaleDiff < 0.01 && cameraReached) {
+                // Достигли целевых значений - применяем финальные значения
+                nodeData.mesh.scale.copy(nodeData.targetScale);
+                if (!nodeData.cameraPositionApplied) {
+                    this.camera.position.copy(nodeData.targetCameraPosition);
+                    this.cameraTarget.copy(nodeData.targetCameraTarget);
+                }
+                this.camera.lookAt(this.cameraTarget);
+                
+                if (nodeData.highlightMaterial) {
+                    nodeData.mesh.material = nodeData.highlightMaterial;
+                }
+                
+                nodeData.isAnimating = false;
+                // Сбрасываем флаг после завершения анимации
+                nodeData.cameraPositionApplied = false;
+            }
+        }
+        
+        // Анимация возврата узла на исходный масштаб (если есть узлы, которые возвращаются)
+        this.nodeMeshes.forEach(nodeData => {
+            if (nodeData !== this.selectedNode && nodeData.isAnimating && nodeData.targetScale) {
+                // Плавное масштабирование узла обратно (узел остается на месте!)
+                const currentScale = nodeData.mesh.scale;
+                currentScale.lerp(nodeData.targetScale, this.animationSpeed);
+
+                // Плавное масштабирование текста обратно
+                if (nodeData.textSprite && nodeData.targetSpriteScale) {
+                    nodeData.textSprite.scale.lerp(nodeData.targetSpriteScale, this.animationSpeed);
+                }
+                
+                // Проверяем, достигли ли мы целевых значений
+                const scaleDiff = nodeData.mesh.scale.distanceTo(nodeData.targetScale);
+                
+                if (scaleDiff < 0.01) {
+                    // Достигли целевых значений
+                    nodeData.mesh.scale.copy(nodeData.targetScale);
+                    if (nodeData.textSprite && nodeData.targetSpriteScale) {
+                        nodeData.textSprite.scale.copy(nodeData.targetSpriteScale);
+                    }
+                    nodeData.isAnimating = false;
+                    nodeData.targetScale = null;
+                    nodeData.targetSpriteScale = null;
+                }
+            }
+        });
+        
+        // Анимация отодвигания соседних узлов
+        this.nodeMeshes.forEach(nodeData => {
+            if (nodeData.isPushing && nodeData.targetPushPosition) {
+                // Плавное перемещение узла
+                const oldMeshPos = nodeData.mesh.position.clone();
+                nodeData.mesh.position.lerp(nodeData.targetPushPosition, this.animationSpeed);
+                
+                // Перемещаем спрайт текста вместе с узлом
+                if (nodeData.textSprite) {
+                    const nodeRadius = (nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS) * nodeData.mesh.scale.y;
+
+                    // Получаем мировую позицию узла
+                    const worldPos = new THREE.Vector3();
+                    nodeData.mesh.getWorldPosition(worldPos);
+
+                    // Преобразуем мировую позицию обратно в локальные координаты treeGroup
+                    const localPos = new THREE.Vector3();
+                    nodeData.treeGroup.worldToLocal(localPos.copy(worldPos));
+
+                    // Обновляем позицию спрайта в локальных координатах
+                    nodeData.textSprite.position.set(
+                        localPos.x,
+                        localPos.y + nodeRadius + 90,
+                        localPos.z
+                    );
+
+                    // Принудительно обновляем матрицу спрайта
+                    nodeData.textSprite.updateMatrix();
+                    if (nodeData.textSprite.parent) {
+                        nodeData.textSprite.parent.updateMatrixWorld(true);
+                    }
+                }
+
+                // Проверяем, достигли ли мы целевой позиции
+                const positionDiff = nodeData.mesh.position.distanceTo(nodeData.targetPushPosition);
+                
+                if (positionDiff < 0.1) {
+                    // Достигли целевой позиции
+                    nodeData.mesh.position.copy(nodeData.targetPushPosition);
+                    if (nodeData.textSprite) {
+                        const nodeRadius = (nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS) * nodeData.mesh.scale.y;
+                        nodeData.textSprite.position.set(
+                            nodeData.mesh.position.x,
+                            nodeData.mesh.position.y + nodeRadius + 90,
+                            nodeData.mesh.position.z
+                        );
+                        // Принудительно обновляем матрицу спрайта и его родителя
+                        nodeData.textSprite.updateMatrix();
+                        if (nodeData.textSprite.parent) {
+                            nodeData.textSprite.parent.updateMatrixWorld(true);
+                        }
+                    }
+                    nodeData.isPushing = false;
+                    nodeData.targetPushPosition = null;
+                }
+            }
+        });
+        
+        // Универсальное обновление позиций всех спрайтов каждый кадр
+        // Это гарантирует, что спрайты всегда синхронизированы с узлами
+        // НЕ обновляем спрайты, которые находятся в процессе отодвигания (они уже обновлены выше)
+        this.nodeMeshes.forEach(nodeData => {
+            if (nodeData.textSprite && nodeData.mesh && !nodeData.isPushing) {
+                const nodeRadius = (nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS) * nodeData.mesh.scale.y;
+                // Обновляем позицию спрайта, чтобы она точно соответствовала позиции узла
+                nodeData.textSprite.position.set(
+                    nodeData.mesh.position.x,
+                    nodeData.mesh.position.y + nodeRadius + 90,
+                    nodeData.mesh.position.z
+                );
+                // Принудительно обновляем матрицу спрайта для корректного отображения
+                nodeData.textSprite.updateMatrix();
+                if (nodeData.textSprite.parent) {
+                    nodeData.textSprite.parent.updateMatrixWorld(true);
+                }
+            }
         });
         
         this.renderer.render(this.scene, this.camera);
