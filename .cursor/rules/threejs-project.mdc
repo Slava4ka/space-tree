@@ -1,0 +1,110 @@
+---
+alwaysApply: true
+---
+# THREE.TS PROJECT RULES (PLAIN TEXT)
+
+## Project Type:
+Three.js + TypeScript.
+Modular ES architecture. Clean, maintainable code.
+
+
+## ARCHITECTURE & STRUCTURE
+
+### Use this project structure:
+
+src/
+core/              - scene, camera, renderer, loop
+objects/           - 3D objects, groups, materials
+systems/           - controls, loaders, physics, events
+utils/             - helpers
+shaders/           - glsl files
+ui/                - UI interactions and components
+styles/            - CSS
+public/
+assets/            - models, textures, fonts
+index.html
+
+### Rules:
+	- Each file exports a single class or small module.
+	- No “god” files. Keep files under ~200 lines when possible.
+	- No logic inside index.ts except initialization.
+
+
+## TYPESCRIPT RULES
+	- Strict mode enabled.
+	- No “any”.
+	- Use readonly, private, protected where appropriate.
+	- Prefer named exports over default exports.
+	- Use interfaces for data structures.
+
+## THREE.JS RULES
+	- Use Scene, PerspectiveCamera, WebGLRenderer, Clock.
+	- Initialize renderer once.
+	- Implement window resize handler.
+	- Create a Loop class using requestAnimationFrame.
+	- Each 3D object is its own class (e.g., RotatingTorus).
+	- Load all assets via loaders only (GLTFLoader, TextureLoader).
+	- Use PMREMGenerator for HDR environment maps.
+
+## CONTROLS & INTERACTION
+
+	- OrbitControls live only in systems/controls.ts.
+	- Camera logic must not be inside scene objects.
+	- Create InteractionSystem for raycaster interactions.
+
+## RENDERING & PERFORMANCE
+
+### Renderer required settings:
+	- renderer.outputColorSpace = THREE.SRGBColorSpace
+	- renderer.toneMapping = THREE.ACESFilmicToneMapping
+	- renderer.toneMappingExposure = 1
+
+### Rules:
+	- Dispose of materials and geometries when not needed.
+	- Do not create objects inside animation loop.
+	- Use GSAP or AnimationMixer for animations.
+	- All animation logic lives in systems/animation.ts.
+
+## SHADERS
+
+	- Each shader in its own file: vertex.glsl, fragment.glsl.
+	- Always define precision (e.g., “precision highp float;”).
+	- No magic numbers; values must be uniforms.
+
+
+## UI RULES
+
+	- All UI logic inside src/ui/.
+	- 3D classes must not modify DOM directly.
+	- Minimalistic dark UI.
+	- CSS should be modular or isolated.
+
+
+## CODING STYLE
+
+	- Use ESLint + Prettier.
+	- Naming:
+	- Classes: PascalCase
+	- Variables: camelCase
+	- Constants: UPPER_SNAKE_CASE
+	- Add comments to important blocks (init, loaders, animation, updates).
+
+
+	## BUILD & DEV
+
+	- Use Vite (preferred) or Webpack.
+	- dist/ as output directory.
+	- Use path aliases:
+        @core/*     -> src/core/*
+        @objects/*  -> src/objects/*
+        @systems/*  -> src/systems/*
+        @utils/*    -> src/utils/*
+
+	##	GLOBAL FEATURES REQUIRED
+
+	- Fullscreen responsive canvas.
+	- Resize handling.
+	- Asset loading error boundary.
+	- Global EventBus system.
+	- Lightweight logging utility.
+

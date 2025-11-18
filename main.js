@@ -440,6 +440,21 @@ class RadialTreeVisualization {
         
         // Параметры для выделения узлов
         this.raycaster = new THREE.Raycaster();
+
+        // Константы режима детального просмотра эпизодов
+        this.DETAIL_MODE_SCREEN_SIZE_PERCENT = 22;  // Процент ширины экрана, который должен занимать узел (10-80%)
+        this.DETAIL_MODE_ZOOM = 1.0;                // Значение зума в режиме детального просмотра (стандартный зум)
+        this.DETAIL_MODE_ANIMATION_TIME = 1.0;      // Время анимации входа/выхода из режима (секунды)
+        this.DETAIL_MODE_ACTOR_RADIUS = 400;        // Радиус расположения имен актеров вокруг узла
+
+        // Переменные режима детального просмотра
+        this.isDetailMode = false;              // Флаг режима детального просмотра
+        this.detailModeNode = null;             // Выбранный узел в режиме детального просмотра
+        this.detailModeOverlay = null;          // Оверлей затемнения
+        this.detailModeExitButton = null;       // Кнопка выхода
+        this.detailModeActorLabels = [];        // Массив меток с именами актеров
+        this.detailModeOriginalStates = null;   // Сохраненные состояния деревьев до входа в режим
+        this.detailModeOriginalZoom = null;      // Сохраненный зум до входа в режим
         this.mouse = new THREE.Vector2();
         this.nodeMeshes = [];            // Массив всех узлов { mesh, originalPosition, originalScale, originalMaterial, node }
         this.selectedNode = null;         // Текущий выделенный узел
@@ -522,20 +537,25 @@ class RadialTreeVisualization {
         
         // Обработка нажатия мыши
         this.container.addEventListener('mousedown', (event) => {
+            // В режиме детального просмотра блокируем все взаимодействия мыши
+            if (this.isDetailMode) {
+                return;
+            }
+
             if (event.button === 0) { // Левая кнопка мыши
                 // Сначала проверяем клик по узлу
                 this.mouse.x = (event.clientX / this.container.clientWidth) * 2 - 1;
                 this.mouse.y = -(event.clientY / this.container.clientHeight) * 2 + 1;
-                
+
                 // Обновляем матрицы всех объектов перед raycasting
                 this.scene.updateMatrixWorld(true);
-                
+
                 this.raycaster.setFromCamera(this.mouse, this.camera);
-                
+
                 // Проверяем пересечения со всеми узлами
                 const allMeshes = this.nodeMeshes.map(n => n.mesh);
                 const intersects = this.raycaster.intersectObjects(allMeshes, true);
-                
+
                 if (intersects.length > 0) {
                     // Клик по узлу - не начинаем перетаскивание
                     const clickedMesh = intersects[0].object;
@@ -544,7 +564,7 @@ class RadialTreeVisualization {
                     event.stopPropagation();
                     return;
                 }
-                
+
                 // Клик не по узлу - начинаем перетаскивание
                 this.isDragging = true;
                 this.previousMousePosition = {
@@ -862,7 +882,7 @@ class RadialTreeVisualization {
                 const metrics = context.measureText(node.text);
                 const textWidth = metrics.width;
                 const textHeight = fontSize;
-
+                
                 // Увеличиваем разрешение canvas для четкости при масштабировании
                 const scaleFactor = 4;
                 canvas.width = (textWidth + 20) * scaleFactor;
@@ -983,12 +1003,23 @@ class RadialTreeVisualization {
         const zoomOutBtn = document.getElementById('zoom-out');
         const zoomResetBtn = document.getElementById('zoom-reset');
         
-        zoomInBtn.addEventListener('click', () => this.zoomIn());
-        zoomOutBtn.addEventListener('click', () => this.zoomOut());
-        zoomResetBtn.addEventListener('click', () => this.resetZoom());
+        zoomInBtn.addEventListener('click', () => {
+            if (!this.isDetailMode) this.zoomIn();
+        });
+        zoomOutBtn.addEventListener('click', () => {
+            if (!this.isDetailMode) this.zoomOut();
+        });
+        zoomResetBtn.addEventListener('click', () => {
+            if (!this.isDetailMode) this.resetZoom();
+        });
         
         // Колесико мыши для зума
         this.container.addEventListener('wheel', (event) => {
+            // В режиме детального просмотра блокируем зум
+            if (this.isDetailMode) {
+                return;
+            }
+
             event.preventDefault();
             if (event.deltaY < 0) {
                 this.zoomIn();
@@ -999,16 +1030,25 @@ class RadialTreeVisualization {
     }
     
     zoomIn() {
+        // В режиме детального просмотра зум заблокирован
+        if (this.isDetailMode) return;
+        
         this.currentZoom = Math.min(this.currentZoom + this.zoomStep, this.maxZoom);
         this.updateCameraZoom();
     }
     
     zoomOut() {
+        // В режиме детального просмотра зум заблокирован
+        if (this.isDetailMode) return;
+        
         this.currentZoom = Math.max(this.currentZoom - this.zoomStep, this.minZoom);
         this.updateCameraZoom();
     }
     
     resetZoom() {
+        // В режиме детального просмотра зум заблокирован
+        if (this.isDetailMode) return;
+        
         this.currentZoom = 1;
         this.updateCameraZoom();
     }
@@ -1250,6 +1290,23 @@ class RadialTreeVisualization {
                     });
                 });
             }
+            
+            // Слайдер для размера узла в режиме детального просмотра
+            const detailModeSizeSlider = document.getElementById('detail-mode-size');
+            const detailModeSizeValue = document.getElementById('detail-mode-size-value');
+            if (detailModeSizeSlider && detailModeSizeValue) {
+                detailModeSizeSlider.value = String(this.DETAIL_MODE_SCREEN_SIZE_PERCENT);
+                detailModeSizeValue.textContent = String(this.DETAIL_MODE_SCREEN_SIZE_PERCENT);
+                detailModeSizeSlider.addEventListener('input', (event) => {
+                    const value = parseInt(event.target.value, 10);
+                    this.DETAIL_MODE_SCREEN_SIZE_PERCENT = value;
+                    detailModeSizeValue.textContent = String(value);
+                    // Если мы в режиме детального просмотра, обновляем размер узла
+                    if (this.isDetailMode && this.detailModeNode) {
+                        this.updateDetailModeNodeScale();
+                    }
+                });
+            }
         }
     }
     
@@ -1357,6 +1414,12 @@ class RadialTreeVisualization {
     }
     
     selectNode(nodeData) {
+        // Для узлов 4 уровня (эпизоды) - вход в режим детального просмотра
+        if (nodeData.node.level === 3) {
+            this.enterDetailMode(nodeData);
+            return;
+        }
+
         this.selectedNode = nodeData;
         
         // Получаем текущую мировую позицию узла (узел остается на месте!)
@@ -1495,7 +1558,940 @@ class RadialTreeVisualization {
         });
         
     }
-    
+
+    // Вход в режим детального просмотра эпизода
+    enterDetailMode(nodeData) {
+        console.log('Entering detail mode for episode:', nodeData.node.text);
+
+        this.isDetailMode = true;
+        this.detailModeNode = nodeData;
+
+        // Сохраняем исходный зум для восстановления при выходе
+        this.detailModeOriginalZoom = this.currentZoom;
+
+        // Сохраняем исходные состояния всех деревьев
+        this.detailModeOriginalStates = [];
+        this.treeGroups.forEach(treeGroup => {
+            this.detailModeOriginalStates.push({
+                group: treeGroup,
+                originalPosition: treeGroup.position.clone(),
+                originalScale: treeGroup.scale.clone(),
+                originalOpacity: treeGroup.children.length > 0 ? treeGroup.children[0].material.opacity : 1
+            });
+        });
+
+        // Блокируем элементы управления зумом
+        this.disableZoomControls();
+
+        // Создаем оверлей затемнения
+        this.createDetailModeOverlay();
+
+        // Создаем кнопку выхода
+        this.createDetailModeExitButton();
+
+        // Анимируем вход в режим
+        this.animateDetailModeEnter();
+    }
+
+    // Создание оверлея затемнения для режима детального просмотра
+    createDetailModeOverlay() {
+        // Создаем геометрию плоскости, покрывающей весь экран (очень большую)
+        const geometry = new THREE.PlaneGeometry(50000, 50000);
+
+        // Создаем материал с радиальным градиентом (от центра к краям)
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;  // Увеличиваем разрешение
+        canvas.height = 1024;
+        const context = canvas.getContext('2d');
+
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = canvas.width / 2;
+
+        // Создаем более плавный градиент
+        const gradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+        gradient.addColorStop(0.0, 'rgba(0, 0, 0, 0.0)');  // Полностью прозрачный центр
+        gradient.addColorStop(0.4, 'rgba(0, 0, 0, 0.0)');  // Еще прозрачный
+        gradient.addColorStop(0.6, 'rgba(0, 0, 0, 0.1)');  // Начинаем затемнять
+        gradient.addColorStop(0.8, 'rgba(0, 0, 0, 0.3)');  // Среднее затемнение
+        gradient.addColorStop(1.0, 'rgba(0, 0, 0, 0.6)');  // Темные края
+
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+
+        const material = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            opacity: 0, // Начинаем с прозрачности 0 для анимации
+            depthWrite: false,
+            side: THREE.DoubleSide // Рендерим с обеих сторон
+        });
+
+        const overlay = new THREE.Mesh(geometry, material);
+        overlay.position.set(0, 0, -200); // Еще дальше позади
+        overlay.renderOrder = -2; // Рендерится самым первым
+
+        this.scene.add(overlay);
+        this.detailModeOverlay = overlay;
+    }
+
+    // Создание кнопки выхода из режима детального просмотра
+    createDetailModeExitButton() {
+        // Создаем HTML кнопку в правом верхнем углу
+        const button = document.createElement('button');
+        button.textContent = '×';
+        button.className = 'zoom-btn detail-exit-btn'; // Используем стиль zoom-btn
+        button.style.position = 'absolute';
+        button.style.top = '20px';
+        button.style.right = '20px';
+        button.style.zIndex = '1000';
+        button.style.opacity = '0'; // Начинаем с прозрачности 0 для анимации
+        button.style.transition = 'opacity 0.3s ease-in-out';
+
+        // Обработчик клика
+        button.addEventListener('click', () => {
+            this.exitDetailMode();
+        });
+
+        // Добавляем в DOM
+        document.body.appendChild(button);
+        this.detailModeExitButton = button;
+
+        // Анимируем появление
+        setTimeout(() => {
+            button.style.opacity = '1';
+        }, 100);
+    }
+
+    // Анимация входа в режим детального просмотра
+    animateDetailModeEnter() {
+        const startTime = Date.now();
+        const duration = this.DETAIL_MODE_ANIMATION_TIME * 1000; // в миллисекундах
+        const nodeData = this.detailModeNode; // Получаем nodeData из this
+
+        const animate = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const easedProgress = this.easeInOut(progress);
+
+            // Скрываем все деревья, КРОМЕ выбранного узла и его текста
+            const selectedMesh = nodeData.mesh;
+            const selectedTextSprite = nodeData.textSprite;
+            
+            if (progress === 0) {
+                console.log('[DETAIL MODE] Starting hide animation for trees');
+                console.log('[DETAIL MODE] Selected mesh:', selectedMesh);
+                console.log('[DETAIL MODE] Selected text sprite:', selectedTextSprite);
+            }
+            
+            // Сначала скрываем все объекты
+            const selectedNodeId = nodeData.node.id;
+            this.treeGroups.forEach(treeGroup => {
+                treeGroup.traverse((object) => {
+                    // Исключаем выбранный узел, его текст и все дочерние элементы из скрытия
+                    if (object === selectedMesh || object === selectedTextSprite) {
+                        return; // Пропускаем выбранный узел
+                    }
+                    
+                    // Проверяем, является ли объект светлячком выбранного узла
+                    const isSelectedFirefly = this.fireflies.some(firefly => 
+                        firefly.mesh === object && firefly.nodeId === selectedNodeId
+                    );
+                    if (isSelectedFirefly) {
+                        if (progress === 0 || (progress >= 0.5 && progress < 0.52)) {
+                            console.log('[DETAIL MODE] traverse() - Skipping selected firefly, visible:', object.visible, 'opacity:', object.material ? object.material.opacity : 'no material');
+                        }
+                        return; // Пропускаем светлячки выбранного узла
+                    }
+                    
+                    // Проверяем, является ли объект дочерним элементом светлячка выбранного узла
+                    let isChildOfSelectedFirefly = false;
+                    let parentForFirefly = object.parent;
+                    while (parentForFirefly) {
+                        const isParentFirefly = this.fireflies.some(firefly => 
+                            firefly.mesh === parentForFirefly && firefly.nodeId === selectedNodeId
+                        );
+                        if (isParentFirefly) {
+                            isChildOfSelectedFirefly = true;
+                            break;
+                        }
+                        parentForFirefly = parentForFirefly.parent;
+                    }
+                    
+                    if (isChildOfSelectedFirefly) {
+                        if (progress === 0 || (progress >= 0.5 && progress < 0.52)) {
+                            console.log('[DETAIL MODE] traverse() - Skipping child of selected firefly, visible:', object.visible, 'opacity:', object.material ? object.material.opacity : 'no material');
+                        }
+                        return; // Пропускаем дочерние элементы светлячков выбранного узла
+                    }
+                    
+                    // Проверяем, является ли объект дочерним элементом выбранного узла (например, edgeLines)
+                    let isChildOfSelected = false;
+                    let parent = object.parent;
+                    while (parent) {
+                        if (parent === selectedMesh) {
+                            isChildOfSelected = true;
+                            break;
+                        }
+                        parent = parent.parent;
+                    }
+                    
+                    if (isChildOfSelected) {
+                        return; // Пропускаем дочерние элементы выбранного узла
+                    }
+                    
+                    // Скрываем все остальные объекты через visible И opacity
+                    // Полностью скрываем только когда анимация почти завершена
+                    object.visible = easedProgress < 0.95; // Скрываем когда opacity уже очень низкий
+                    
+                    if (object.material) {
+                        if (Array.isArray(object.material)) {
+                            object.material.forEach(mat => {
+                                mat.opacity = 1 - easedProgress;
+                                mat.transparent = true;
+                            });
+                        } else {
+                            object.material.opacity = 1 - easedProgress;
+                            object.material.transparent = true;
+                        }
+                    }
+                });
+            });
+            
+            // ВАЖНО: После traverse() явно устанавливаем видимость выбранного узла
+            // Это гарантирует, что он останется видимым, даже если traverse() его обработал
+            selectedMesh.visible = true;
+            if (selectedTextSprite) {
+                selectedTextSprite.visible = true;
+            }
+            
+            // Убеждаемся, что все дочерние элементы выбранного узла (например, edgeLines) остаются видимыми
+            selectedMesh.traverse((child) => {
+                if (child !== selectedMesh) {
+                    child.visible = true;
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(mat => {
+                                mat.opacity = 1;
+                                mat.transparent = false;
+                            });
+                        } else {
+                            child.material.opacity = 1;
+                            child.material.transparent = false;
+                        }
+                    }
+                }
+            });
+            
+            // Убеждаемся, что светлячки выбранного узла остаются видимыми
+            let fireflyVisibilitySetCount = 0;
+            this.fireflies.forEach((firefly, index) => {
+                if (firefly.mesh && firefly.nodeId === selectedNodeId) {
+                    firefly.mesh.visible = true;
+                    fireflyVisibilitySetCount++;
+                    // Убеждаемся, что материал светлячка видим
+                    firefly.mesh.traverse((child) => {
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(mat => {
+                                    mat.opacity = 1;
+                                    mat.transparent = false;
+                                });
+                            } else {
+                                child.material.opacity = 1;
+                                child.material.transparent = false;
+                            }
+                        }
+                    });
+                    if (progress === 0 || (progress >= 0.5 && progress < 0.52)) {
+                        console.log('[DETAIL MODE] Setting firefly', index, 'visibility. visible:', firefly.mesh.visible, 'parent:', firefly.mesh.parent, 'parent.visible:', firefly.mesh.parent ? firefly.mesh.parent.visible : 'no parent');
+                    }
+                }
+            });
+            if (progress === 0 || (progress >= 0.5 && progress < 0.52)) {
+                console.log('[DETAIL MODE] Fireflies visibility set count:', fireflyVisibilitySetCount, 'for selected node:', selectedNodeId);
+            }
+            
+            // КРИТИЧЕСКИ ВАЖНО: Убеждаемся, что родительская группа выбранного узла видима
+            // Если родитель скрыт, дочерние объекты тоже не видны!
+            if (selectedMesh.parent) {
+                selectedMesh.parent.visible = true;
+                // Рекурсивно проверяем всех родителей до корня
+                let parent = selectedMesh.parent;
+                while (parent && parent !== this.scene) {
+                    parent.visible = true;
+                    parent = parent.parent;
+                }
+            }
+            
+            if (selectedTextSprite && selectedTextSprite.parent) {
+                selectedTextSprite.parent.visible = true;
+                // Рекурсивно проверяем всех родителей до корня
+                let parent = selectedTextSprite.parent;
+                while (parent && parent !== this.scene) {
+                    parent.visible = true;
+                    parent = parent.parent;
+                }
+            }
+            
+            // Также убеждаемся, что материалы выбранного узла правильные
+            if (selectedMesh.material) {
+                if (Array.isArray(selectedMesh.material)) {
+                    selectedMesh.material.forEach(mat => {
+                        mat.opacity = 1;
+                        mat.transparent = false;
+                    });
+                } else {
+                    selectedMesh.material.opacity = 1;
+                    selectedMesh.material.transparent = false;
+                }
+            }
+            
+            if (selectedTextSprite && selectedTextSprite.material) {
+                selectedTextSprite.material.opacity = 1;
+                selectedTextSprite.material.transparent = false;
+            }
+            
+            // Логируем состояние в середине анимации
+            if (progress >= 0.5 && progress < 0.52) {
+                console.log('[DETAIL MODE] Mid-animation - Mesh visible:', selectedMesh.visible);
+                console.log('[DETAIL MODE] Mid-animation - Mesh parent visible:', selectedMesh.parent ? selectedMesh.parent.visible : 'no parent');
+                console.log('[DETAIL MODE] Mid-animation - Mesh material opacity:', selectedMesh.material ? (Array.isArray(selectedMesh.material) ? selectedMesh.material[0].opacity : selectedMesh.material.opacity) : 'no material');
+            }
+            
+            if (progress === 0) {
+                let hiddenCount = 0;
+                let visibleCount = 0;
+                this.treeGroups.forEach(treeGroup => {
+                    treeGroup.traverse((object) => {
+                        if (object === selectedMesh || object === selectedTextSprite) {
+                            visibleCount++;
+                        } else {
+                            hiddenCount++;
+                        }
+                    });
+                });
+                console.log('[DETAIL MODE] Objects to hide:', hiddenCount);
+                console.log('[DETAIL MODE] Objects to keep visible:', visibleCount);
+            }
+
+            // Удаляем только светлячки, которые НЕ принадлежат выбранному узлу
+            // Светлячки выбранного узла остаются видимыми и продолжают крутиться
+            if (progress === 0) {
+                const selectedNodeId = nodeData.node.id;
+                console.log('[DETAIL MODE] Processing fireflies. Selected node ID:', selectedNodeId);
+                console.log('[DETAIL MODE] Total fireflies:', this.fireflies.length);
+                let removedCount = 0;
+                let keptCount = 0;
+                let noParentCount = 0;
+                this.fireflies.forEach((firefly, index) => {
+                    if (firefly.mesh) {
+                        if (firefly.mesh.parent) {
+                            // Удаляем только светлячки других узлов
+                            if (firefly.nodeId !== selectedNodeId) {
+                                firefly.mesh.parent.remove(firefly.mesh);
+                                removedCount++;
+                            } else {
+                                // Светлячки выбранного узла остаются видимыми
+                                firefly.mesh.visible = true;
+                                keptCount++;
+                                console.log('[DETAIL MODE] Kept firefly', index, 'for node', firefly.nodeId, 'visible:', firefly.mesh.visible, 'parent:', firefly.mesh.parent);
+                            }
+                        } else {
+                            noParentCount++;
+                            console.log('[DETAIL MODE] Firefly', index, 'has no parent, nodeId:', firefly.nodeId);
+                        }
+                    } else {
+                        console.log('[DETAIL MODE] Firefly', index, 'has no mesh');
+                    }
+                });
+                console.log('[DETAIL MODE] Removed fireflies:', removedCount, 'out of', this.fireflies.length);
+                console.log('[DETAIL MODE] Kept fireflies for selected node:', keptCount);
+                console.log('[DETAIL MODE] Fireflies without parent:', noParentCount);
+            }
+
+            // Увеличиваем и центрируем выбранный узел
+            // Вычисляем масштаб на основе процента ширины экрана
+            const targetScaleValue = this.calculateDetailModeScale(nodeData);
+            const baseScale = nodeData.originalScale || new THREE.Vector3(1, 1, 1);
+            const targetScale = baseScale.clone().multiplyScalar(targetScaleValue);
+            const currentScale = baseScale.clone().lerp(targetScale, easedProgress);
+            nodeData.mesh.scale.copy(currentScale);
+
+            if (progress === 0) {
+                console.log('[DETAIL MODE] Node:', nodeData.node.text);
+                console.log('[DETAIL MODE] Initial mesh position:', nodeData.mesh.position.clone());
+                console.log('[DETAIL MODE] Has text sprite:', !!nodeData.textSprite);
+                console.log('[DETAIL MODE] Mesh visible after traverse:', nodeData.mesh.visible);
+            }
+
+            // Масштабируем текст узла
+            if (nodeData.textSprite && nodeData.originalSpriteScale) {
+                const targetSpriteScale = nodeData.originalSpriteScale.clone().multiplyScalar(targetScaleValue);
+                nodeData.textSprite.scale.lerp(targetSpriteScale, easedProgress);
+            }
+
+            // Центрируем узел в сцене
+            const targetPosition = new THREE.Vector3(0, 0, 0);
+            nodeData.mesh.position.lerp(targetPosition, easedProgress);
+
+            // Центрируем текст узла
+            if (nodeData.textSprite) {
+                const nodeRadius = NODE_RADIUS * currentScale.x; // currentScale теперь Vector3
+                nodeData.textSprite.position.set(0, nodeRadius + 90, 0);
+            }
+
+            if (progress >= 0.5 && progress < 0.52) {
+                console.log('[DETAIL MODE] Mid-animation mesh position:', nodeData.mesh.position.clone());
+                console.log('[DETAIL MODE] Current scale:', currentScale);
+            }
+
+            // Показываем оверлей затемнения
+            if (this.detailModeOverlay) {
+                this.detailModeOverlay.material.opacity = easedProgress * 0.8;
+            }
+
+            // Создаем метки актеров в конце анимации
+            if (progress >= 0.8 && this.detailModeActorLabels.length === 0) {
+                console.log('[DETAIL MODE] Creating actor labels at progress:', progress);
+                this.createActorLabels();
+            }
+
+            // Анимируем зум к стандартному значению
+            const targetZoom = this.DETAIL_MODE_ZOOM;
+            const startZoom = this.detailModeOriginalZoom || this.currentZoom;
+            this.currentZoom = THREE.MathUtils.lerp(startZoom, targetZoom, easedProgress);
+            this.updateCameraZoom();
+
+            // Камера смотрит на центр
+            this.cameraTarget.lerp(new THREE.Vector3(0, 0, 0), easedProgress * 0.1);
+            this.camera.lookAt(this.cameraTarget);
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                // Анимация завершена
+                console.log('[DETAIL MODE] Enter animation completed');
+                console.log('[DETAIL MODE] Final mesh position:', nodeData.mesh.position.clone());
+                console.log('[DETAIL MODE] Overlay opacity:', this.detailModeOverlay ? this.detailModeOverlay.material.opacity : 'N/A');
+                console.log('[DETAIL MODE] Actor labels count:', this.detailModeActorLabels.length);
+                
+                // На всякий случай создаем метки, если их еще нет
+                if (this.detailModeActorLabels.length === 0) {
+                    console.log('[DETAIL MODE] Creating actor labels at end of animation');
+                    this.createActorLabels();
+                }
+            }
+        };
+
+        animate();
+    }
+
+    // Выход из режима детального просмотра
+    exitDetailMode() {
+        console.log('[EXIT MODE] Exiting detail mode');
+        console.log('[EXIT MODE] isDetailMode:', this.isDetailMode);
+        console.log('[EXIT MODE] detailModeNode:', this.detailModeNode);
+
+        // Запускаем анимацию зума сразу (начинается на 0.5 секунды раньше)
+        this.animateZoomRestore();
+
+        // Запускаем анимацию возврата узла через 0.5 секунды
+        setTimeout(() => {
+            this.animateNodeReturn();
+        }, 500);
+    }
+
+    // Анимация восстановления зума (начинается сразу)
+    animateZoomRestore() {
+        const startTime = Date.now();
+        const duration = this.DETAIL_MODE_ANIMATION_TIME * 1000;
+
+        const animate = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const easedProgress = this.easeInOut(progress);
+
+            // Анимируем зум обратно к исходному значению
+            const targetZoom = this.detailModeOriginalZoom || this.DETAIL_MODE_ZOOM;
+            const startZoom = this.DETAIL_MODE_ZOOM; // Текущий зум в режиме детального просмотра
+            this.currentZoom = THREE.MathUtils.lerp(startZoom, targetZoom, easedProgress);
+            this.updateCameraZoom();
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            }
+        };
+
+        animate();
+    }
+
+    // Анимация возврата узла на место (начинается через 0.5 секунды)
+    animateNodeReturn() {
+        const startTime = Date.now();
+        const duration = this.DETAIL_MODE_ANIMATION_TIME * 1000;
+
+        const animate = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const easedProgress = this.easeInOut(progress);
+
+            // Возвращаем все деревья
+            const nodeData = this.detailModeNode;
+            const selectedMesh = nodeData.mesh;
+            const selectedTextSprite = nodeData.textSprite;
+            
+            this.treeGroups.forEach(treeGroup => {
+                treeGroup.traverse((object) => {
+                    // Исключаем выбранный узел, его текст и все дочерние элементы из восстановления opacity
+                    if (object === selectedMesh || object === selectedTextSprite) {
+                        return; // Пропускаем выбранный узел
+                    }
+                    
+                    // Проверяем, является ли объект дочерним элементом выбранного узла (например, edgeLines)
+                    let isChildOfSelected = false;
+                    let parent = object.parent;
+                    while (parent) {
+                        if (parent === selectedMesh) {
+                            isChildOfSelected = true;
+                            break;
+                        }
+                        parent = parent.parent;
+                    }
+                    
+                    if (isChildOfSelected) {
+                        return; // Пропускаем дочерние элементы выбранного узла
+                    }
+                    
+                    // Восстанавливаем видимость всех остальных объектов
+                    object.visible = true;
+                    
+                    // Восстанавливаем opacity для остальных объектов
+                    if (object.material) {
+                        if (Array.isArray(object.material)) {
+                            object.material.forEach(mat => {
+                                mat.opacity = easedProgress;
+                                mat.transparent = easedProgress < 1;
+                            });
+                        } else {
+                            object.material.opacity = easedProgress;
+                            object.material.transparent = easedProgress < 1;
+                        }
+                    }
+                });
+            });
+            
+            // Явно устанавливаем видимость и opacity для выбранного узла и его дочерних элементов
+            selectedMesh.visible = true;
+            if (selectedTextSprite) {
+                selectedTextSprite.visible = true;
+            }
+            
+            // Убеждаемся, что все дочерние элементы выбранного узла (edgeLines) остаются видимыми
+            selectedMesh.traverse((child) => {
+                if (child !== selectedMesh) {
+                    child.visible = true;
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(mat => {
+                                mat.opacity = 1;
+                                mat.transparent = false;
+                            });
+                        } else {
+                            child.material.opacity = 1;
+                            child.material.transparent = false;
+                        }
+                    }
+                }
+            });
+            
+            // Убеждаемся, что материал выбранного узла остается видимым
+            if (selectedMesh.material) {
+                if (Array.isArray(selectedMesh.material)) {
+                    selectedMesh.material.forEach(mat => {
+                        mat.opacity = 1;
+                        mat.transparent = false;
+                    });
+                } else {
+                    selectedMesh.material.opacity = 1;
+                    selectedMesh.material.transparent = false;
+                }
+            }
+            
+            if (selectedTextSprite && selectedTextSprite.material) {
+                selectedTextSprite.material.opacity = 1;
+                selectedTextSprite.material.transparent = false;
+            }
+
+            // Добавляем светлячки обратно в treeGroup
+            this.fireflies.forEach(firefly => {
+                if (firefly.mesh && firefly.nodeId !== undefined) {
+                    // Находим treeGroup для этого узла
+                    const treeGroup = this.treeGroups.find(group =>
+                        group.children.some(child =>
+                            child.userData && child.userData.node && child.userData.node.id === firefly.nodeId
+                        )
+                    );
+                    if (treeGroup && !firefly.mesh.parent) {
+                        treeGroup.add(firefly.mesh);
+                    }
+                }
+            });
+
+            // Возвращаем выбранный узел к исходному состоянию
+            // Вычисляем масштаб детального режима и возвращаем к исходному
+            const detailScaleValue = this.calculateDetailModeScale(nodeData);
+            const baseScale = nodeData.originalScale || new THREE.Vector3(1, 1, 1);
+            const detailScale = baseScale.clone().multiplyScalar(detailScaleValue);
+            const currentScale = detailScale.clone().lerp(baseScale, easedProgress);
+            nodeData.mesh.scale.copy(currentScale);
+
+            if (nodeData.textSprite && nodeData.originalSpriteScale) {
+                const detailSpriteScale = nodeData.originalSpriteScale.clone().multiplyScalar(detailScaleValue);
+                nodeData.textSprite.scale.lerp(nodeData.originalSpriteScale, easedProgress);
+            }
+
+            // Возвращаем позицию узла
+            const originalPosition = nodeData.originalPosition;
+            nodeData.mesh.position.lerp(originalPosition, easedProgress);
+
+            // Возвращаем позицию текста
+            if (nodeData.textSprite) {
+                const nodeRadius = NODE_RADIUS * currentScale.x; // currentScale теперь Vector3
+                const textPos = new THREE.Vector3(
+                    originalPosition.x,
+                    originalPosition.y + nodeRadius + 90,
+                    originalPosition.z
+                );
+                nodeData.textSprite.position.lerp(textPos, easedProgress);
+            }
+
+            // Скрываем оверлей
+            if (this.detailModeOverlay) {
+                this.detailModeOverlay.material.opacity = (1 - easedProgress) * 0.8;
+            }
+
+            // Скрываем метки актеров
+            this.detailModeActorLabels.forEach(label => {
+                if (label.sprite) {
+                    label.sprite.material.opacity = 1 - easedProgress;
+                }
+            });
+
+            // Скрываем кнопку выхода
+            if (this.detailModeExitButton) {
+                this.detailModeExitButton.style.opacity = 1 - easedProgress;
+            }
+
+            // Возвращаем камеру
+            if (this.originalCameraPosition) {
+                this.camera.position.lerp(this.originalCameraPosition, easedProgress * 0.1);
+                this.cameraTarget.lerp(this.originalCameraTarget || new THREE.Vector3(0, 0, 0), easedProgress * 0.1);
+                this.camera.lookAt(this.cameraTarget);
+            }
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                // Очищаем режим
+                console.log('[EXIT MODE] Exit animation completed, cleaning up');
+                this.cleanupDetailMode();
+                console.log('[EXIT MODE] Cleanup completed');
+                console.log('[EXIT MODE] isDetailMode after cleanup:', this.isDetailMode);
+            }
+        };
+
+        animate();
+    }
+
+    // Очистка режима детального просмотра
+    cleanupDetailMode() {
+        // Удаляем оверлей
+        if (this.detailModeOverlay) {
+            this.scene.remove(this.detailModeOverlay);
+            this.detailModeOverlay.geometry.dispose();
+            this.detailModeOverlay.material.dispose();
+            this.detailModeOverlay = null;
+        }
+
+        // Удаляем кнопку выхода
+        if (this.detailModeExitButton) {
+            document.body.removeChild(this.detailModeExitButton);
+            this.detailModeExitButton = null;
+        }
+
+        // Удаляем метки актеров
+        this.detailModeActorLabels.forEach(label => {
+            if (label.sprite) {
+                this.scene.remove(label.sprite);
+                label.sprite.geometry.dispose();
+                label.sprite.material.dispose();
+            }
+        });
+        this.detailModeActorLabels = [];
+
+        // Восстанавливаем деревья
+        this.detailModeOriginalStates.forEach(state => {
+            this.setGroupOpacity(state.group, state.originalOpacity, state.originalOpacity < 1);
+        });
+        this.detailModeOriginalStates = null;
+
+        // Разблокируем элементы управления зумом
+        this.enableZoomControls();
+
+        // Сбрасываем флаги
+        this.isDetailMode = false;
+        this.detailModeNode = null;
+        this.detailModeOriginalZoom = null;
+    }
+
+    // Функция easing для плавных анимаций
+    easeInOut(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    // Вычисление масштаба узла на основе процента ширины экрана
+    calculateDetailModeScale(nodeData) {
+        // Получаем исходный радиус узла
+        const nodeRadius = nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS;
+        const nodeDiameter = nodeRadius * 2; // Диаметр узла в исходном размере
+
+        // Вычисляем размер видимой области на стандартном расстоянии (зум = 1.0)
+        // Используем initialCameraDistance, которое соответствует зуму 1.0
+        const fov = this.camera.fov * (Math.PI / 180); // FOV в радианах
+        const standardDistance = this.initialCameraDistance; // Расстояние при зуме 1.0
+        const visibleHeight = 2 * Math.tan(fov / 2) * standardDistance;
+        const visibleWidth = visibleHeight * this.camera.aspect;
+
+        // Вычисляем желаемый размер узла (процент от ширины экрана)
+        const targetSize = visibleWidth * (this.DETAIL_MODE_SCREEN_SIZE_PERCENT / 100);
+
+        // Вычисляем нужный масштаб
+        const scale = targetSize / nodeDiameter;
+
+        return scale;
+    }
+
+    // Блокировка элементов управления зумом в режиме детального просмотра
+    disableZoomControls() {
+        const zoomInBtn = document.getElementById('zoom-in');
+        const zoomOutBtn = document.getElementById('zoom-out');
+        const zoomResetBtn = document.getElementById('zoom-reset');
+        
+        if (zoomInBtn) {
+            zoomInBtn.style.opacity = '0.3';
+            zoomInBtn.style.pointerEvents = 'none';
+            zoomInBtn.disabled = true;
+        }
+        if (zoomOutBtn) {
+            zoomOutBtn.style.opacity = '0.3';
+            zoomOutBtn.style.pointerEvents = 'none';
+            zoomOutBtn.disabled = true;
+        }
+        if (zoomResetBtn) {
+            zoomResetBtn.style.opacity = '0.3';
+            zoomResetBtn.style.pointerEvents = 'none';
+            zoomResetBtn.disabled = true;
+        }
+    }
+
+    // Разблокировка элементов управления зумом
+    enableZoomControls() {
+        const zoomInBtn = document.getElementById('zoom-in');
+        const zoomOutBtn = document.getElementById('zoom-out');
+        const zoomResetBtn = document.getElementById('zoom-reset');
+        
+        if (zoomInBtn) {
+            zoomInBtn.style.opacity = '1';
+            zoomInBtn.style.pointerEvents = 'auto';
+            zoomInBtn.disabled = false;
+        }
+        if (zoomOutBtn) {
+            zoomOutBtn.style.opacity = '1';
+            zoomOutBtn.style.pointerEvents = 'auto';
+            zoomOutBtn.disabled = false;
+        }
+        if (zoomResetBtn) {
+            zoomResetBtn.style.opacity = '1';
+            zoomResetBtn.style.pointerEvents = 'auto';
+            zoomResetBtn.disabled = false;
+        }
+    }
+
+    // Обновление размера узла в режиме детального просмотра (при изменении слайдера)
+    updateDetailModeNodeScale() {
+        if (!this.isDetailMode || !this.detailModeNode) return;
+
+        const nodeData = this.detailModeNode;
+        const targetScale = this.calculateDetailModeScale(nodeData);
+        const baseScale = nodeData.originalScale || new THREE.Vector3(1, 1, 1);
+        const newScale = baseScale.clone().multiplyScalar(targetScale);
+        
+        nodeData.mesh.scale.copy(newScale);
+
+        // Обновляем масштаб текста
+        if (nodeData.textSprite && nodeData.originalSpriteScale) {
+            const newSpriteScale = nodeData.originalSpriteScale.clone().multiplyScalar(targetScale);
+            nodeData.textSprite.scale.copy(newSpriteScale);
+        }
+    }
+
+    // Рекурсивная функция для установки opacity всем объектам в группе
+    setGroupOpacity(group, opacity, makeTransparent = true) {
+        group.traverse((object) => {
+            if (object.material) {
+                if (Array.isArray(object.material)) {
+                    object.material.forEach(mat => {
+                        mat.opacity = opacity;
+                        mat.transparent = makeTransparent && opacity < 1;
+                    });
+                } else {
+                    object.material.opacity = opacity;
+                    object.material.transparent = makeTransparent && opacity < 1;
+                }
+            }
+        });
+    }
+
+    // Создание текстовых меток актеров по кругу
+    createActorLabels() {
+        console.log('[ACTOR LABELS] Starting createActorLabels()');
+        
+        if (!this.detailModeNode) {
+            console.warn('[ACTOR LABELS] No detailModeNode!');
+            return;
+        }
+
+        const nodeData = this.detailModeNode;
+        const episodeId = nodeData.node.id;
+        console.log('[ACTOR LABELS] Episode ID:', episodeId, 'Name:', nodeData.node.text);
+
+        // Находим актеров для этого эпизода
+        const actors = actorsData.filter(actor => actor.parentId === episodeId);
+        console.log('[ACTOR LABELS] Found actors count:', actors.length);
+        console.log('[ACTOR LABELS] Actors:', actors);
+
+        if (actors.length === 0) {
+            // Даже если актеров нет, создаем одну метку "Нет информации"
+            actors.push({ text: 'Нет информации об актёрах' });
+            console.log('[ACTOR LABELS] No actors found, using placeholder');
+        }
+
+        const radius = this.DETAIL_MODE_ACTOR_RADIUS;
+        const angleStep = (Math.PI * 2) / actors.length;
+        
+        console.log('[ACTOR LABELS] Creating labels at radius:', radius);
+        console.log('[ACTOR LABELS] Angle step:', angleStep);
+
+        actors.forEach((actor, index) => {
+            const angle = index * angleStep;
+
+            // Позиция метки по кругу
+            const x = Math.cos(angle) * radius;
+            const z = Math.sin(angle) * radius;
+            const y = 0; // На уровне узла
+
+            // Создаем текстовый спрайт для актера
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            // Размер шрифта для актеров (меньше чем для узлов)
+            const fontSize = 24;
+            context.font = `bold ${fontSize}px Arial`;
+
+            const textWidth = context.measureText(actor.text).width;
+            const textHeight = fontSize;
+
+            // Увеличиваем разрешение для четкости
+            const scaleFactor = 4;
+            canvas.width = (textWidth + 20) * scaleFactor;
+            canvas.height = (textHeight + 20) * scaleFactor;
+            context.scale(scaleFactor, scaleFactor);
+            context.font = `bold ${fontSize}px Arial`;
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+
+            // Рисуем текст с обводкой
+            context.fillStyle = '#ffffff';
+            context.strokeStyle = '#000000';
+            context.lineWidth = 2;
+            context.strokeText(actor.text, (textWidth + 20) / 2, (textHeight + 20) / 2);
+            context.fillText(actor.text, (textWidth + 20) / 2, (textHeight + 20) / 2);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: texture,
+                transparent: true,
+                opacity: 0, // Начинаем с прозрачности 0 для анимации
+                alphaTest: 0.1
+            });
+
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.position.set(x, y, z);
+            sprite.scale.set((canvas.width / scaleFactor) * 0.8, (canvas.height / scaleFactor) * 0.8, 1);
+            sprite.renderOrder = 2; // Над всем
+
+            this.scene.add(sprite);
+            
+            console.log('[ACTOR LABELS] Created label', index, 'for:', actor.text, 'at position:', x, y, z);
+
+            this.detailModeActorLabels.push({
+                sprite: sprite,
+                actor: actor,
+                originalPosition: sprite.position.clone()
+            });
+        });
+        
+        console.log('[ACTOR LABELS] Total labels created:', this.detailModeActorLabels.length);
+
+        // Анимируем появление меток актеров
+        this.animateActorLabelsAppearance();
+    }
+
+    // Анимация появления меток актеров
+    animateActorLabelsAppearance() {
+        console.log('[ACTOR LABELS] Starting appearance animation');
+        console.log('[ACTOR LABELS] Labels to animate:', this.detailModeActorLabels.length);
+        
+        const startTime = Date.now();
+        const duration = 0.5 * 1000; // 0.5 секунды
+
+        const animate = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const easedProgress = this.easeInOut(progress);
+
+            this.detailModeActorLabels.forEach((label, index) => {
+                const delay = index * 0.1; // Задержка для каждого следующего
+                const delayedProgress = Math.max(0, progress - delay);
+
+                if (label.sprite) {
+                    label.sprite.material.opacity = delayedProgress;
+                    // Небольшая анимация масштаба
+                    const scale = 0.8 + delayedProgress * 0.2;
+                    label.sprite.scale.set(
+                        label.sprite.scale.x * scale / label.sprite.scale.x,
+                        label.sprite.scale.y * scale / label.sprite.scale.y,
+                        1
+                    );
+                }
+            });
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                console.log('[ACTOR LABELS] Appearance animation completed');
+            }
+        };
+
+        animate();
+    }
+
     deselectNode(nodeData) {
         // Возвращаем масштаб узла к исходному (узел остается на месте!)
         nodeData.targetScale = new THREE.Vector3(1, 1, 1);
@@ -1543,21 +2539,54 @@ class RadialTreeVisualization {
         requestAnimationFrame(() => this.animate());
         
         // Обновляем позиции светлячков
-        this.fireflies.forEach(firefly => {
+        let detailModeFireflyCount = 0;
+        this.fireflies.forEach((firefly, index) => {
+            if (!firefly.mesh) return;
+            
             // Обновляем угол с учетом скорости
             firefly.angle += firefly.speed * 0.01;
             
+            // Вычисляем радиус орбиты (зависит от размера узла в детальном режиме)
+            let orbitRadius = this.fireflyOrbitRadius;
+            const isDetailModeFirefly = this.isDetailMode && this.detailModeNode && firefly.nodeId === this.detailModeNode.node.id;
+            if (isDetailModeFirefly) {
+                // В детальном режиме радиус орбиты должен масштабироваться вместе с узлом
+                // Получаем текущий масштаб узла (используем среднее значение по осям)
+                const nodeScale = this.detailModeNode.mesh.scale;
+                const averageScale = (nodeScale.x + nodeScale.y + nodeScale.z) / 3;
+                // Применяем масштаб к радиусу орбиты
+                orbitRadius = this.fireflyOrbitRadius * averageScale;
+                detailModeFireflyCount++;
+            }
+            
             // Вычисляем новую позицию на орбите в локальной системе координат treeGroup
             // Орбита в горизонтальной плоскости XZ (локальная относительно узла)
-            const orbitX = Math.cos(firefly.angle) * this.fireflyOrbitRadius;
+            const orbitX = Math.cos(firefly.angle) * orbitRadius;
             const orbitY = 0; // На уровне узла
-            const orbitZ = Math.sin(firefly.angle) * this.fireflyOrbitRadius;
+            const orbitZ = Math.sin(firefly.angle) * orbitRadius;
+            
+            // В детальном режиме для светлячков выбранного узла используем текущую позицию узла (0, 0, 0)
+            let nodePosition = firefly.nodePosition;
+            if (isDetailModeFirefly) {
+                // В детальном режиме узел находится в центре (0, 0, 0)
+                nodePosition = new THREE.Vector3(0, 0, 0);
+                
+                // Логируем периодически (каждые 60 кадров, примерно раз в секунду)
+                if (index === 0 && Math.floor(Date.now() / 1000) % 2 === 0) {
+                    console.log('[FIREFLY ANIMATION] Detail mode firefly', index, 'visible:', firefly.mesh.visible, 'position:', firefly.mesh.position, 'orbitRadius:', orbitRadius, 'nodeScale:', nodeScale);
+                }
+            }
             
             // Позиция = позиция узла + смещение на орбите
-            firefly.mesh.position.x = firefly.nodePosition.x + orbitX;
-            firefly.mesh.position.y = firefly.nodePosition.y + orbitY;
-            firefly.mesh.position.z = firefly.nodePosition.z + orbitZ;
+            firefly.mesh.position.x = nodePosition.x + orbitX;
+            firefly.mesh.position.y = nodePosition.y + orbitY;
+            firefly.mesh.position.z = nodePosition.z + orbitZ;
         });
+        
+        // Периодически логируем состояние светлячков в детальном режиме
+        if (this.isDetailMode && detailModeFireflyCount > 0 && Math.floor(Date.now() / 2000) % 3 === 0) {
+            console.log('[FIREFLY ANIMATION] Detail mode active, fireflies count:', detailModeFireflyCount);
+        }
         
         // Анимация выделенного узла
         if (this.selectedNode && this.selectedNode.isAnimating) {
