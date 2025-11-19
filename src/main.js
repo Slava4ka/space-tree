@@ -90,11 +90,12 @@ function init() {
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
     
+    // Оптимизированный BloomPass для производительности
     const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        1.5, // strength
-        0.4, // radius
-        0.85 // threshold
+        new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2), // Уменьшенное разрешение
+        1.2, // strength (уменьшено)
+        0.3, // radius (уменьшено)
+        0.9 // threshold (увеличено для меньшего количества объектов)
     );
     composer.addPass(bloomPass);
     
@@ -394,6 +395,5 @@ function animate() {
     labelRenderer.render(scene, camera);
 }
 
-// Запуск при загрузке
-window.addEventListener('load', init);
+// Старый код инициализации удален - используется RadialTreeVisualization из main.js
 

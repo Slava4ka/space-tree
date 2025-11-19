@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { TreeNode } from './seriesMockData.js';
-import { seriesMockData, actorsData } from './seriesMockData.js';
+import { TreeNode, mockData } from './mockData.js';
+import { debounce } from 'lodash';
 
 // Константы
 const ROOT_RADIUS = 225;  // Радиус корневого узла (увеличен в 3 раза)
@@ -13,7 +13,18 @@ let cachedDepth = null;
 
 // Преобразование статического массива данных в структуру TreeNode
 // Возвращает массив деревьев (несколько root узлов)
-function buildTreesFromData(data, maxDepth) {
+function buildTreesFromData(data, maxDepth, childrenCache = null) {
+    // Создаем кэш детей если не передан
+    if (!childrenCache) {
+        childrenCache = new Map();
+        data.forEach(item => {
+            if (!childrenCache.has(item.parentId)) {
+                childrenCache.set(item.parentId, []);
+            }
+            childrenCache.get(item.parentId).push(item);
+        });
+    }
+
     // Используем кэш, если глубина не изменилась
     if (cachedTrees && cachedDepth === maxDepth) {
         // Возвращаем глубокую копию узлов, чтобы избежать мутации
@@ -21,7 +32,7 @@ function buildTreesFromData(data, maxDepth) {
             // Создаем копии узлов
     const nodeMap = new Map();
             const newNodes = [];
-            
+
             nodes.forEach(node => {
                 const newNode = new TreeNode(node.id, null, node.level);
                 newNode.text = node.text;
@@ -30,7 +41,7 @@ function buildTreesFromData(data, maxDepth) {
                 nodeMap.set(node.id, newNode);
                 newNodes.push(newNode);
             });
-            
+
             // Восстанавливаем связи
             nodes.forEach(node => {
                 const newNode = nodeMap.get(node.id);
@@ -41,12 +52,12 @@ function buildTreesFromData(data, maxDepth) {
                     newNode.children.push(nodeMap.get(child.id));
                 });
             });
-            
+
             const newRoot = nodeMap.get(root.id);
             return { root: newRoot, nodes: newNodes };
         });
     }
-    
+
     const nodeMap = new Map();
     const roots = [];
     
@@ -193,7 +204,7 @@ function groupNodesByLevel(nodes) {
  * Считаем максимальное количество узлов на каждом уровне для всех деревьев.
  */
 function computeMaxNodesPerLevel(maxDepth) {
-    const trees = buildTreesFromData(seriesMockData, maxDepth);
+    const trees = buildTreesFromData(mockData, maxDepth);
     const result = {};
     
     trees.forEach(({ nodes }) => {
@@ -412,6 +423,7 @@ function calculatePositions(root, nodes, config) {
 // Создание визуализации дерева
 class RadialTreeVisualization {
     constructor(containerId) {
+        updateLoadingProgress(10); // Инициализация сцены
         this.container = document.getElementById(containerId);
         this.scene = new THREE.Scene();
         this.camera = null;
@@ -460,12 +472,10 @@ class RadialTreeVisualization {
         this.selectedNode = null;         // Текущий выделенный узел
         this.animationSpeed = 0.05;      // Скорость анимации (lerp factor)
         
-        this.maxNodesPerLevel = computeMaxNodesPerLevel(4); // Глубина 4 уровня (сериал -> сезон -> режиссер -> серия)
+        this.maxNodesPerLevel = computeMaxNodesPerLevel(3); // Глубина 3 уровня (вызов -> задача -> технология)
         this.levelLimits = {
-            1: this.maxNodesPerLevel[1] ?? 0,
-            2: this.maxNodesPerLevel[2] ?? 0,
-            3: this.maxNodesPerLevel[3] ?? 0,
-            4: this.maxNodesPerLevel[4] ?? 0,
+            1: this.maxNodesPerLevel[1] ?? 0,  // Задачи (единственный управляемый уровень)
+            2: 0,  // Технологии - всегда 0 (отображаются как светлячки)
         };
         
         // Параметры зума (будет обновляться динамически)
@@ -484,7 +494,7 @@ class RadialTreeVisualization {
         this.cameraTarget = new THREE.Vector3(0, 0, 0); // Начальная цель - центр сцены
         
         this.init();
-        this.createTrees(4); // Глубина 4 уровня (сериал -> сезон -> режиссер -> серия)
+        this.createTrees(3); // Глубина 3 уровня (вызов -> задача -> технология)
         this.setupZoomControls();
         this.setupLayoutControls();
         this.animate();
@@ -650,48 +660,55 @@ class RadialTreeVisualization {
     }
     
     createTrees(depth) {
-        // Сбрасываем кэш при пересоздании деревьев
-        cachedTrees = null;
-        
-        // Очищаем массив узлов перед созданием новых
-        this.nodeMeshes = [];
-        cachedDepth = null;
-        
-        // Удаляем старые деревья
-        this.treeGroups.forEach(treeGroup => {
-            this.scene.remove(treeGroup);
-            treeGroup.traverse((child) => {
-                if (child.geometry) child.geometry.dispose();
-                if (child.material) {
-                    if (Array.isArray(child.material)) {
-                        child.material.forEach(m => m.dispose());
-                    } else {
-                        child.material.dispose();
+            // Сбрасываем кэш при пересоздании деревьев
+            cachedTrees = null;
+
+            // Очищаем массив узлов перед созданием новых
+            this.nodeMeshes = [];
+            cachedDepth = null;
+
+            // Удаляем старые деревья
+            this.treeGroups.forEach(treeGroup => {
+                this.scene.remove(treeGroup);
+                treeGroup.traverse((child) => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
                     }
-                }
+                });
             });
-        });
-        this.treeGroups = [];
-        
-        // Удаляем старые светлячки
-        this.fireflies.forEach(firefly => {
-            // Светлячки теперь в treeGroup, а не в scene, но treeGroup уже удален выше
-            // Очищаем ресурсы меша и всех дочерних элементов (glow)
-            firefly.mesh.traverse((child) => {
-                if (child.geometry) child.geometry.dispose();
-                if (child.material) {
-                    if (Array.isArray(child.material)) {
-                        child.material.forEach(m => m.dispose());
-                    } else {
-                        child.material.dispose();
+            this.treeGroups = [];
+
+            // Удаляем старые светлячки
+            this.fireflies.forEach(firefly => {
+                firefly.mesh.traverse((child) => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
                     }
-                }
+                });
             });
+            this.fireflies = [];
+
+        // Создаем кэш детей для быстрой фильтрации
+        const childrenCache = new Map();
+        mockData.forEach(item => {
+            if (!childrenCache.has(item.parentId)) {
+                childrenCache.set(item.parentId, []);
+            }
+            childrenCache.get(item.parentId).push(item);
         });
-        this.fireflies = [];
-        
-        // Строим все деревья из данных
-        const trees = buildTreesFromData(seriesMockData, depth);
+
+        // Строим все деревья из данных (тяжелая операция)
+        const trees = buildTreesFromData(mockData, depth, childrenCache);
         
         // Вычисляем радиусы для каждого дерева с учётом текущих параметров
         const treeData = trees.map(({ root, nodes }) => {
@@ -763,13 +780,7 @@ class RadialTreeVisualization {
             pos.z += offsetZ;
         });
         
-        // Цвета для разных деревьев
-        const rootColors = [
-            0xff6b6b, // Красный для Ведьмака
-            0x4ecdc4, // Бирюзовый для Очень странных дел
-            0x95e1d3, // Зелёный для Игры престолов
-            0xf38181, // Розовый для Во все тяжкие
-        ];
+        // Все корневые узлы (вызовы) имеют одинаковый золотистый цвет
         
         treeData.forEach(({ root: filteredRoot, nodes: filteredNodes }, treeIndex) => {
             // Вычисляем позиции с учётом смещения для этого дерева
@@ -802,15 +813,12 @@ class RadialTreeVisualization {
             }
         });
         
-        // Отладочная информация: считаем узлы уровня 3
-        const level3Nodes = filteredNodes.filter(node => node.level === 3);
-        let totalFirefliesForTree = 0;
-        level3Nodes.forEach(node => {
-            const actorCount = actorsData.filter(actor => actor.parentId === node.id).length;
-            totalFirefliesForTree += actorCount;
-        });
+            // Подсчитываем общее количество светлячков для отладки
+            const level1Nodes = filteredNodes.filter(node => node.level === 1);
+            const totalFirefliesForTree = level1Nodes.reduce((sum, node) =>
+                sum + Math.min((childrenCache.get(node.id) || []).length, 20), 0);
         
-        // Создаем сферы (вершины)
+        // Создаем сферы (вершины) - базовая сцена без светлячков
         filteredNodes.forEach(node => {
                 const isRoot = node.level === 0;
                 const radius = getNodeRadius(node, isRoot);
@@ -819,11 +827,11 @@ class RadialTreeVisualization {
             
             let material;
             if (isRoot) {
-                    // Корень - цвет зависит от дерева
-                    const rootColor = rootColors[treeIndex] || 0xffa500;
+                // Корневые узлы (вызовы) - одинаковый золотистый цвет для всех
+                const rootColor = 0xffd700; // Золотистый цвет
                 material = new THREE.MeshStandardMaterial({
-                        color: rootColor,
-                        emissive: rootColor,
+                    color: rootColor,
+                    emissive: rootColor,
                     emissiveIntensity: 0.5,
                     metalness: 0.3,
                     roughness: 0.2
@@ -938,18 +946,22 @@ class RadialTreeVisualization {
             });
             
                 
-                // Создаем светлячков для узлов 4 уровня (серии)
-                // Уровни: 0=сериал, 1=сезоны, 2=режиссеры, 3=эпизоды
-                if (node.level === 3) {
-                    // Находим количество актеров для этого эпизода
-                    const actorsForEpisode = actorsData.filter(actor => actor.parentId === node.id);
-                    const actorCount = actorsForEpisode.length;
+                // Создаем светлячков для узлов уровня 1 (задач)
+                // Уровни: 0=вызовы (root), 1=задачи, 2=технологии
+                // Светлячки создаются для задач (level 1), представляя их технологии (level 2)
+                if (node.level === 1) {
+                    // Находим все технологии (дети уровня 2) для этой задачи
+                    const technologies = childrenCache.get(node.id) || [];
+                    const technologyCount = technologies.length;
                     
-                    // Создаем светлячков только если есть актеры
-                    if (actorCount > 0) {
-                        for (let i = 0; i < actorCount; i++) {
+                    // Создаем светлячков только если есть технологии (ограничение для производительности)
+                    const maxFirefliesPerTask = 20; // Максимум 20 светлячков на задачу
+                    const actualFireflyCount = Math.min(technologyCount, maxFirefliesPerTask);
+
+                    if (actualFireflyCount > 0) {
+                        for (let i = 0; i < actualFireflyCount; i++) {
                             // Случайный начальный угол (не равномерное распределение)
-                            const baseAngle = (i / actorCount) * Math.PI * 2;
+                            const baseAngle = (i / technologyCount) * Math.PI * 2;
                             const randomOffset = (Math.random() - 0.5) * 0.5; // Случайное смещение до ±0.25 радиан
                             const angle = baseAngle + randomOffset;
                             
@@ -962,16 +974,16 @@ class RadialTreeVisualization {
                             
                             // Создаем светлячка
                             const firefly = this.createFirefly(new THREE.Vector3(0, 0, 0), angle);
-                            // Позиция светлячка в локальной системе координат treeGroup
-                            // Узел находится в treeGroup на позиции node.position
-                            // Светлячок должен быть на орбите вокруг узла
                             const orbitX = Math.cos(angle) * this.fireflyOrbitRadius;
-                            const orbitY = 0;
                             const orbitZ = Math.sin(angle) * this.fireflyOrbitRadius;
-                            // Позиция = позиция узла + смещение на орбите
-                            firefly.position.x = node.position.x + orbitX;
-                            firefly.position.y = node.position.y + orbitY;
-                            firefly.position.z = node.position.z + orbitZ;
+                            firefly.position.set(
+                                node.position.x + orbitX,
+                                node.position.y,
+                                node.position.z + orbitZ
+                            );
+                            
+                            // Сохраняем информацию о технологии для светлячка
+                            firefly.userData.technology = technologies[i];
                             
                             this.fireflies.push({
                                 mesh: firefly, // firefly теперь группа
@@ -995,7 +1007,23 @@ class RadialTreeVisualization {
             this.scene.add(treeGroup);
             this.treeGroups.push(treeGroup);
         });
-        
+
+        updateLoadingProgress(80); // Деревья созданы
+
+        // Отложенное создание светлячков для производительности
+        setTimeout(() => {
+            this.createFirefliesForTrees(trees, childrenCache);
+            updateLoadingProgress(100); // Светлячки созданы
+        }, 100);
+
+    }
+
+    // Отдельный метод для создания светлячков
+    createFirefliesForTrees(trees, childrenCache) {
+        trees.forEach(({ root, nodes }) => {
+            const filteredNodes = nodes.filter(node => node.level !== 2); // Исключаем уровень 2
+
+        });
     }
     
     setupZoomControls() {
@@ -1104,31 +1132,28 @@ class RadialTreeVisualization {
         const marginValue = document.getElementById('level-margin-value');
         const level1Slider = document.getElementById('level1-count');
         const level1Value = document.getElementById('level1-value');
-        const level2Slider = document.getElementById('level2-count');
-        const level2Value = document.getElementById('level2-value');
-        const level3Slider = document.getElementById('level3-count');
-        const level3Value = document.getElementById('level3-value');
         
         if (spacingSlider && spacingValue) {
-            spacingSlider.addEventListener('input', (event) => {
+            spacingSlider.addEventListener('input', debounce((event) => {
                 const value = parseFloat(event.target.value);
                 this.spacingFactor = value;
                 spacingValue.textContent = value.toFixed(1);
-                this.createTrees(4);
-            });
+                this.createTrees(3);
+            }, 300)); // 300ms задержка
         }
-        
+
         if (marginSlider && marginValue) {
-            marginSlider.addEventListener('input', (event) => {
+            marginSlider.addEventListener('input', debounce((event) => {
                 const value = parseFloat(event.target.value);
                 this.levelMarginFactor = value;
                 marginValue.textContent = value.toFixed(1);
-                this.createTrees(4);
-            });
+                this.createTrees(3);
+            }, 300)); // 300ms задержка
         }
 
         // Инициализация и обработчики для количества узлов по уровням
         if (this.maxNodesPerLevel) {
+            // Уровень 1 (задачи) - единственный управляемый уровень
             if (level1Slider && level1Value) {
                 const max1 = this.maxNodesPerLevel[1] ?? 0;
                 level1Slider.max = String(max1);
@@ -1138,49 +1163,12 @@ class RadialTreeVisualization {
                     const value = parseInt(event.target.value, 10);
                     this.levelLimits[1] = value;
                     level1Value.textContent = String(value);
-                    this.createTrees(4);
+                    this.createTrees(3);
                 });
             }
-            if (level2Slider && level2Value) {
-                const max2 = this.maxNodesPerLevel[2] ?? 0;
-                level2Slider.max = String(max2);
-                level2Slider.value = String(this.levelLimits[2] ?? max2);
-                level2Value.textContent = String(this.levelLimits[2] ?? max2);
-                level2Slider.addEventListener('input', (event) => {
-                    const value = parseInt(event.target.value, 10);
-                    this.levelLimits[2] = value;
-                    level2Value.textContent = String(value);
-                    this.createTrees(4);
-                });
-            }
-            if (level3Slider && level3Value) {
-                const max3 = this.maxNodesPerLevel[3] ?? 0;
-                level3Slider.max = String(max3);
-                level3Slider.value = String(this.levelLimits[3] ?? max3);
-                level3Value.textContent = String(this.levelLimits[3] ?? max3);
-                level3Slider.addEventListener('input', (event) => {
-                    const value = parseInt(event.target.value, 10);
-                    this.levelLimits[3] = value;
-                    level3Value.textContent = String(value);
-                    this.createTrees(4);
-                });
-            }
-            // Добавляем слайдер для уровня 4 (серии)
-            const level4Slider = document.getElementById('level4-count');
-            const level4Value = document.getElementById('level4-value');
-            if (level4Slider && level4Value) {
-                const max4 = this.maxNodesPerLevel[4] ?? 0;
-                level4Slider.max = String(max4);
-                level4Slider.value = String(this.levelLimits[4] ?? max4);
-                level4Value.textContent = String(this.levelLimits[4] ?? max4);
-                level4Slider.addEventListener('input', (event) => {
-                    const value = parseInt(event.target.value, 10);
-                    this.levelLimits[4] = value;
-                    level4Value.textContent = String(value);
-                    this.createTrees(4);
-                });
-            }
-            
+            // Уровень 0 (вызовы) всегда показывается полностью
+            // Уровень 2 (технологии) всегда равен 0 - не имеет слайдера
+        
             // Слайдеры для вращения графа по осям
             const graphRotationXSlider = document.getElementById('graph-rotation-x');
             const graphRotationXValue = document.getElementById('graph-rotation-x-value');
@@ -1414,8 +1402,8 @@ class RadialTreeVisualization {
     }
     
     selectNode(nodeData) {
-        // Для узлов 4 уровня (эпизоды) - вход в режим детального просмотра
-        if (nodeData.node.level === 3) {
+        // Для узлов уровня 1 (задачи) - вход в режим детального просмотра
+        if (nodeData.node.level === 1) {
             this.enterDetailMode(nodeData);
             return;
         }
@@ -2366,27 +2354,28 @@ class RadialTreeVisualization {
         }
 
         const nodeData = this.detailModeNode;
-        const episodeId = nodeData.node.id;
-        console.log('[ACTOR LABELS] Episode ID:', episodeId, 'Name:', nodeData.node.text);
+        const taskId = nodeData.node.id;
+        console.log('[TECHNOLOGY LABELS] Task ID:', taskId, 'Name:', nodeData.node.text);
 
-        // Находим актеров для этого эпизода
-        const actors = actorsData.filter(actor => actor.parentId === episodeId);
-        console.log('[ACTOR LABELS] Found actors count:', actors.length);
-        console.log('[ACTOR LABELS] Actors:', actors);
+        // Находим технологии для этой задачи
+        // Получаем технологии (дети уровня 3) для задачи (taskId)
+        const technologies = mockData.filter(item => item.parentId === taskId);
+        console.log('[TECHNOLOGY LABELS] Found technologies count:', technologies.length);
+        console.log('[TECHNOLOGY LABELS] Technologies:', technologies);
 
-        if (actors.length === 0) {
-            // Даже если актеров нет, создаем одну метку "Нет информации"
-            actors.push({ text: 'Нет информации об актёрах' });
-            console.log('[ACTOR LABELS] No actors found, using placeholder');
+        if (technologies.length === 0) {
+            // Даже если технологий нет, создаем одну метку "Нет информации"
+            technologies.push({ text: 'Нет информации о технологиях' });
+            console.log('[TECHNOLOGY LABELS] No technologies found, using placeholder');
         }
 
         const radius = this.DETAIL_MODE_ACTOR_RADIUS;
-        const angleStep = (Math.PI * 2) / actors.length;
+        const angleStep = (Math.PI * 2) / technologies.length;
         
-        console.log('[ACTOR LABELS] Creating labels at radius:', radius);
-        console.log('[ACTOR LABELS] Angle step:', angleStep);
+        console.log('[TECHNOLOGY LABELS] Creating labels at radius:', radius);
+        console.log('[TECHNOLOGY LABELS] Angle step:', angleStep);
 
-        actors.forEach((actor, index) => {
+        technologies.forEach((technology, index) => {
             const angle = index * angleStep;
 
             // Позиция метки по кругу
@@ -2402,7 +2391,7 @@ class RadialTreeVisualization {
             const fontSize = 24;
             context.font = `bold ${fontSize}px Arial`;
 
-            const textWidth = context.measureText(actor.text).width;
+            const textWidth = context.measureText(technology.text).width;
             const textHeight = fontSize;
 
             // Увеличиваем разрешение для четкости
@@ -2418,8 +2407,8 @@ class RadialTreeVisualization {
             context.fillStyle = '#ffffff';
             context.strokeStyle = '#000000';
             context.lineWidth = 2;
-            context.strokeText(actor.text, (textWidth + 20) / 2, (textHeight + 20) / 2);
-            context.fillText(actor.text, (textWidth + 20) / 2, (textHeight + 20) / 2);
+            context.strokeText(technology.text, (textWidth + 20) / 2, (textHeight + 20) / 2);
+            context.fillText(technology.text, (textWidth + 20) / 2, (textHeight + 20) / 2);
 
             const texture = new THREE.CanvasTexture(canvas);
             texture.needsUpdate = true;
@@ -2438,11 +2427,11 @@ class RadialTreeVisualization {
 
             this.scene.add(sprite);
             
-            console.log('[ACTOR LABELS] Created label', index, 'for:', actor.text, 'at position:', x, y, z);
+            console.log('[TECHNOLOGY LABELS] Created label', index, 'for:', technology.text, 'at position:', x, y, z);
 
             this.detailModeActorLabels.push({
                 sprite: sprite,
-                actor: actor,
+                technology: technology,
                 originalPosition: sprite.position.clone()
             });
         });
@@ -2771,8 +2760,37 @@ class RadialTreeVisualization {
     }
 }
 
+// Функция обновления прогресса загрузки
+function updateLoadingProgress(progress) {
+    const loadingBar = document.getElementById('loading-bar');
+    if (loadingBar) {
+        loadingBar.style.width = Math.min(progress, 100) + '%';
+    }
+}
+
+// Функция для скрытия загрузочного экрана
+function hideLoadingScreen() {
+    const loadingScreen = document.getElementById('loading-screen');
+    const canvas = document.getElementById('scene-canvas');
+
+    if (loadingScreen) {
+        loadingScreen.style.opacity = '0';
+        setTimeout(() => {
+            loadingScreen.style.display = 'none';
+            if (canvas) {
+                canvas.style.display = 'block';
+            }
+        }, 500);
+    }
+}
+
 // Инициализация при загрузке страницы
 window.addEventListener('DOMContentLoaded', () => {
-    new RadialTreeVisualization('scene-canvas');
+    const viz = new RadialTreeVisualization('scene-canvas');
+
+    // Скрываем загрузочный экран после инициализации
+    setTimeout(() => {
+        hideLoadingScreen();
+    }, 1000); // Даем время на финальную загрузку
 });
 
