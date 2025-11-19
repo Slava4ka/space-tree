@@ -1,11 +1,46 @@
 import * as THREE from 'three';
 import { TreeNode, mockData } from './mockData.js';
 import { debounce } from 'lodash';
-
-// Константы
-const ROOT_RADIUS = 225;  // Радиус корневого узла (увеличен в 3 раза)
-const NODE_RADIUS = 135;  // Радиус обычных узлов (увеличен в 3 раза)
-const H_STEP = 50;       // Вертикальный шаг (на будущее, сейчас не используется)
+import { SceneManager } from './core/SceneManager.js';
+import { CameraManager } from './core/CameraManager.js';
+import { RendererManager } from './core/RendererManager.js';
+import { Loop } from './core/Loop.js';
+import { TextureGenerator } from './utils/TextureGenerator.js';
+import { Firefly } from './objects/Firefly.js';
+import { LayoutCalculator } from './systems/LayoutCalculator.js';
+import { Controls } from './systems/Controls.js';
+import { LoadingScreen } from './ui/LoadingScreen.js';
+import { DetailModeSystem } from './systems/DetailModeSystem.js';
+import {
+    ROOT_RADIUS,
+    NODE_RADIUS,
+    H_STEP,
+    FIREFLY_SIZE,
+    FIREFLY_ORBIT_RADIUS,
+    FIREFLY_ROTATION_SPEED,
+    FIREFLY_CORE_SIZE_MULTIPLIER,
+    DETAIL_MODE_SCREEN_SIZE_PERCENT,
+    DETAIL_MODE_ZOOM,
+    DETAIL_MODE_ANIMATION_TIME,
+    DETAIL_MODE_ACTOR_RADIUS,
+    ANIMATION_SPEED,
+    CAMERA_INITIAL_DISTANCE,
+    ROOT_NODE_COLOR,
+    LEVEL_1_COLOR,
+    LEVEL_2_COLOR,
+    LEVEL_3_COLOR,
+    DEFAULT_NODE_COLOR,
+    NODE_MATERIAL_COLOR,
+    EDGE_LINE_COLOR,
+    EDGE_LINE_COLOR_WHITE,
+    TEXT_COLOR,
+    TEXT_STROKE_COLOR,
+    TEXT_STROKE_WIDTH,
+    SPHERE_SEGMENTS,
+    SPHERE_RINGS,
+    TEXT_SCALE_FACTOR,
+    TEXT_PADDING
+} from './utils/constants.js';
 
 // Кэш для деревьев (чтобы не пересчитывать каждый раз)
 let cachedTrees = null;
@@ -140,65 +175,15 @@ function getNodeRadius(node, isRoot = false) {
 
 // === Радиальный layout без force-layout ====================================
 
-/**
- * Собираем листья дерева в порядке DFS.
- */
-function collectLeavesDFS(node, leaves) {
-    if (node.children.length === 0) {
-        leaves.push(node);
-        return;
-    }
-    node.children.forEach((child) => collectLeavesDFS(child, leaves));
-}
+// Функция collectLeavesDFS перенесена в LayoutCalculator
 
 /**
  * Назначаем углы:
  *  - листьям — равномерно по окружности;
  *  - внутренним узлам — средний угол по детям (с учётом цикличности).
  */
-function assignAngles(root) {
-    const leaves = [];
-    collectLeavesDFS(root, leaves);
-    
-    const leafCount = leaves.length || 1;
-    
-    // Равномерно распределяем листья по окружности
-    leaves.forEach((leaf, index) => {
-        const angle = (2 * Math.PI * (index + 0.5)) / leafCount;
-        leaf.angle = angle;
-    });
-    
-    // Рекурсивно назначаем углы внутренним узлам как среднее по детям
-    function assignInternal(node) {
-        if (node.children.length === 0) {
-            return node.angle;
-        }
-        
-        const angles = node.children.map(assignInternal);
-        
-        // Средний угол на окружности через сумму синусов/косинусов
-        const sinSum = angles.reduce((sum, a) => sum + Math.sin(a), 0);
-        const cosSum = angles.reduce((sum, a) => sum + Math.cos(a), 0);
-        node.angle = Math.atan2(sinSum, cosSum);
-        return node.angle;
-    }
-    
-    assignInternal(root);
-}
-
-/**
- * Группируем узлы по уровню.
- */
-function groupNodesByLevel(nodes) {
-    const levels = new Map();
-    nodes.forEach((node) => {
-        if (!levels.has(node.level)) {
-            levels.set(node.level, []);
-        }
-        levels.get(node.level).push(node);
-    });
-    return levels;
-}
+// Функции перенесены в LayoutCalculator
+// Используем LayoutCalculator.assignAngles() и LayoutCalculator.groupNodesByLevel()
 
 /**
  * Считаем максимальное количество узлов на каждом уровне для всех деревьев.
@@ -208,7 +193,7 @@ function computeMaxNodesPerLevel(maxDepth) {
     const result = {};
     
     trees.forEach(({ nodes }) => {
-        const levels = groupNodesByLevel(nodes);
+        const levels = LayoutCalculator.groupNodesByLevel(nodes);
     levels.forEach((levelNodes, level) => {
             const current = result[level] ?? 0;
             result[level] = Math.max(current, levelNodes.length);
@@ -265,13 +250,18 @@ function filterTreeByLevel(root, nodes, levelLimits) {
  * Возвращает максимальный радиус, который будет у дерева
  */
 function calculateMaxTreeRadius(root, nodes, config) {
+    return LayoutCalculator.calculateMaxTreeRadius(root, nodes, config);
+}
+
+// Старая реализация удалена, используем LayoutCalculator
+function calculateMaxTreeRadius_OLD(root, nodes, config) {
     const spacingFactor = config?.spacingFactor ?? 1.4;
     const levelMarginFactor = config?.levelMarginFactor ?? 0.6;
     
     // Временно назначаем углы для расчета
-    assignAngles(root);
+    LayoutCalculator.assignAngles(root);
     
-    const levels = groupNodesByLevel(nodes);
+    const levels = LayoutCalculator.groupNodesByLevel(nodes);
     const maxLevel = Math.max(...nodes.map((n) => n.level));
     
     const radii = new Array(maxLevel + 1).fill(0);
@@ -339,102 +329,35 @@ function calculateMaxTreeRadius(root, nodes, config) {
  *  - offset: смещение центра дерева (для размещения нескольких деревьев)
  */
 function calculatePositions(root, nodes, config) {
-    const spacingFactor = config?.spacingFactor ?? 1.4;       // 1–2
-    const levelMarginFactor = config?.levelMarginFactor ?? 0.6; // 0–2
-    const offset = config?.offset ?? new THREE.Vector3(0, 0, 0);
-    
-    // 1. Углы для всех узлов
-    assignAngles(root);
-    
-    // 2. Группируем по уровням
-    const levels = groupNodesByLevel(nodes);
-    const maxLevel = Math.max(...nodes.map((n) => n.level));
-    
-    const radii = new Array(maxLevel + 1).fill(0);
-    radii[0] = 0; // root в центре
-    
-    const nodeDiameter = 2 * NODE_RADIUS;
-    const targetChord = nodeDiameter * spacingFactor; // желаемое расстояние между соседними центрами
-    const baseLevelSeparation = ROOT_RADIUS + NODE_RADIUS; // минимальное разделение уровней без учёта фактора
-    
-    // 3. Считаем радиусы уровней
-    for (let level = 1; level <= maxLevel; level += 1) {
-        const levelNodes = levels.get(level) || [];
-        
-        // Если на уровне нет узлов (маловероятно) — просто увеличиваем радиус
-        if (levelNodes.length === 0) {
-            radii[level] = radii[level - 1] + baseLevelSeparation;
-            continue;
-        }
-        
-        // Считаем минимальную разницу углов между соседними узлами на уровне
-        let minAngleDiff = 2 * Math.PI;
-        if (levelNodes.length > 1) {
-            const sorted = [...levelNodes].sort((a, b) => a.angle - b.angle);
-            for (let i = 0; i < sorted.length; i += 1) {
-                const current = sorted[i];
-                const next = sorted[(i + 1) % sorted.length];
-                let diff = next.angle - current.angle;
-                if (diff < 0) diff += 2 * Math.PI;
-                if (diff < minAngleDiff) minAngleDiff = diff;
-            }
-        }
-        
-        // Если узел один, берём полный круг
-        if (levelNodes.length === 1) {
-            minAngleDiff = 2 * Math.PI;
-        }
-        
-        // Радиус из условия, что хорда >= targetChord
-        let radiusFromSpacing;
-        if (minAngleDiff > 1e-3) {
-            radiusFromSpacing = targetChord / (2 * Math.sin(minAngleDiff / 2));
-        } else {
-            // На всякий случай, если углы почти совпали
-            radiusFromSpacing = radii[level - 1] + baseLevelSeparation * 2;
-        }
-        
-        // Минимальный радиус с учётом разделения уровней
-        const radiusBase = Math.max(
-            radiusFromSpacing,
-            radii[level - 1] + baseLevelSeparation
-        );
-        
-        // Добавляем настраиваемый радиальный зазор
-        const extraGap = level * levelMarginFactor * nodeDiameter;
-        
-        radii[level] = radiusBase + extraGap;
-    }
-    
-    // 4. Присваиваем позиции с учётом смещения
-    nodes.forEach((node) => {
-        if (node.level === 0) {
-            node.position.copy(offset);
-            return;
-        }
-        const r = radii[node.level];
-        const angle = node.angle ?? 0;
-        const x = offset.x + r * Math.cos(angle);
-        const z = offset.z + r * Math.sin(angle);
-        node.position.set(x, offset.y, z);
-    });
+    return LayoutCalculator.calculatePositions(root, nodes, config);
 }
+
 
 // Создание визуализации дерева
 class RadialTreeVisualization {
     constructor(containerId) {
-        updateLoadingProgress(10); // Инициализация сцены
+        this.loadingScreen = new LoadingScreen();
+        this.loadingScreen.updateProgress(10); // Инициализация сцены
         this.container = document.getElementById(containerId);
-        this.scene = new THREE.Scene();
-        this.camera = null;
-        this.renderer = null;
+        
+        // Используем core модули
+        this.sceneManager = new SceneManager();
+        this.scene = this.sceneManager.getScene();
+        
+        const aspect = window.innerWidth / window.innerHeight;
+        this.cameraManager = new CameraManager(aspect);
+        this.camera = this.cameraManager.getCamera();
+        
+        this.rendererManager = new RendererManager(this.container);
+        this.renderer = this.rendererManager.getRenderer();
+        
+        this.loop = new Loop();
         this.treeGroups = []; // Массив групп деревьев
         
-        // Переменные для управления камерой мышью
-        this.isDragging = false;
-        this.previousMousePosition = { x: 0, y: 0 };
+        // Переменные для управления камерой (Controls управляет isDragging и previousMousePosition)
         this.cameraPosition = new THREE.Vector3(0, 800, 1000); // Позиция камеры (фиксированный угол сверху)
-        this.cameraTarget = new THREE.Vector3(0, 0, 0); // Точка, на которую смотрит камера
+        // Синхронизируем cameraTarget с CameraManager
+        this.cameraTarget = this.cameraManager.getTarget();
         
         // Параметры layout'а (управляются слайдерами)
         this.spacingFactor = 1.4;       // множитель для расстояния по окружности (1–2 диаметров)
@@ -445,32 +368,28 @@ class RadialTreeVisualization {
             z: 15
         };
         // Параметры светлячков
-        this.fireflySize = 20;          // Размер светлячков
-        this.fireflyOrbitRadius = 200;   // Радиус орбиты светлячков
-        this.fireflyRotationSpeed = 1;    // Скорость вращения светлячков
+        this.fireflySize = FIREFLY_SIZE;
+        this.fireflyOrbitRadius = FIREFLY_ORBIT_RADIUS;
+        this.fireflyRotationSpeed = FIREFLY_ROTATION_SPEED;
         this.fireflies = [];             // Массив светлячков { mesh, nodeId, angle, speed }
         
         // Параметры для выделения узлов
         this.raycaster = new THREE.Raycaster();
 
         // Константы режима детального просмотра эпизодов
-        this.DETAIL_MODE_SCREEN_SIZE_PERCENT = 22;  // Процент ширины экрана, который должен занимать узел (10-80%)
-        this.DETAIL_MODE_ZOOM = 1.0;                // Значение зума в режиме детального просмотра (стандартный зум)
-        this.DETAIL_MODE_ANIMATION_TIME = 1.0;      // Время анимации входа/выхода из режима (секунды)
-        this.DETAIL_MODE_ACTOR_RADIUS = 400;        // Радиус расположения имен актеров вокруг узла
+        this.DETAIL_MODE_SCREEN_SIZE_PERCENT = DETAIL_MODE_SCREEN_SIZE_PERCENT;
+        this.DETAIL_MODE_ZOOM = DETAIL_MODE_ZOOM;
+        this.DETAIL_MODE_ANIMATION_TIME = DETAIL_MODE_ANIMATION_TIME;
+        this.DETAIL_MODE_ACTOR_RADIUS = DETAIL_MODE_ACTOR_RADIUS;
 
-        // Переменные режима детального просмотра
-        this.isDetailMode = false;              // Флаг режима детального просмотра
-        this.detailModeNode = null;             // Выбранный узел в режиме детального просмотра
-        this.detailModeOverlay = null;          // Оверлей затемнения
-        this.detailModeExitButton = null;       // Кнопка выхода
-        this.detailModeActorLabels = [];        // Массив меток с именами актеров
-        this.detailModeOriginalStates = null;   // Сохраненные состояния деревьев до входа в режим
-        this.detailModeOriginalZoom = null;      // Сохраненный зум до входа в режим
+        // Переменные режима детального просмотра (теперь управляются через DetailModeSystem)
+        // Оставляем для обратной совместимости
+        this.isDetailMode = false;
+        this.detailModeNode = null;
         this.mouse = new THREE.Vector2();
         this.nodeMeshes = [];            // Массив всех узлов { mesh, originalPosition, originalScale, originalMaterial, node }
         this.selectedNode = null;         // Текущий выделенный узел
-        this.animationSpeed = 0.05;      // Скорость анимации (lerp factor)
+        this.animationSpeed = ANIMATION_SPEED;
         
         this.maxNodesPerLevel = computeMaxNodesPerLevel(3); // Глубина 3 уровня (вызов -> задача -> технология)
         this.levelLimits = {
@@ -478,184 +397,123 @@ class RadialTreeVisualization {
             2: 0,  // Технологии - всегда 0 (отображаются как светлячки)
         };
         
-        // Параметры зума (будет обновляться динамически)
-        this.initialCameraDistance = 1500; // Расстояние для обзора нескольких деревьев
-        this.currentZoom = 1;
-        this.minZoom = 0.2;
-        this.maxZoom = 3;
-        this.zoomStep = 0.2;
+        // Параметры зума (используем из CameraManager)
+        this.initialCameraDistance = CAMERA_INITIAL_DISTANCE;
         
         // Минимальное расстояние между центрами деревьев (будет вычисляться динамически)
         this.minTreeSpacing = 0;
         
-        // Инициализация камеры должна быть до init()
-        // Фиксированный угол обзора сверху (как было изначально)
+        // Сохраняем ссылки для совместимости со старым кодом
         this.cameraPosition = new THREE.Vector3(0, 800, 1000);
-        this.cameraTarget = new THREE.Vector3(0, 0, 0); // Начальная цель - центр сцены
+        this.cameraTarget = this.cameraManager.getTarget();
+        this.currentZoom = this.cameraManager.getZoom();
         
         this.init();
         this.createTrees(3); // Глубина 3 уровня (вызов -> задача -> технология)
         this.setupZoomControls();
         this.setupLayoutControls();
-        this.animate();
+        this.setupAnimationLoop();
     }
     
     init() {
-        // Создание камеры
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-        
-        // Увеличиваем far plane, чтобы все объекты были видны при любом зуме
-        this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 50000);
-        // Устанавливаем начальную позицию камеры
-        this.camera.position.copy(this.cameraPosition);
-        this.camera.lookAt(this.cameraTarget);
-        
-        // Создание рендерера
-        this.renderer = new THREE.WebGLRenderer({
-            canvas: this.container,
-            alpha: true,
-            antialias: true
-        });
-        this.renderer.setSize(width, height);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        
-        // Освещение
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-        this.scene.add(ambientLight);
-        
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(200, 200, 200);
-        this.scene.add(directionalLight);
-        
-        const pointLight = new THREE.PointLight(0xffa500, 1, 1000);
-        pointLight.position.set(0, 0, 0);
-        this.scene.add(pointLight);
-        
+        // Камера, рендерер и сцена уже созданы через core модули
         // Обработка изменения размера окна
         window.addEventListener('resize', () => this.onWindowResize());
         
         // Инициализация управления камерой мышью
-        this.setupMouseControls();
+        this.controls = new Controls(
+            this.container,
+            this.cameraManager,
+            (event) => this.checkNodeClick(event), // Callback для проверки клика по узлу
+            () => this.updateCameraPosition() // Callback для обновления позиции камеры после панорамирования
+        );
         
-        // Инициализация обработчика клика по узлам
-        this.setupNodeClickHandler();
+        // Инициализация системы детального режима (ссылки на treeGroups и fireflies обновятся после createTrees)
+        this.detailModeSystem = new DetailModeSystem({
+            scene: this.scene,
+            camera: this.camera,
+            cameraManager: this.cameraManager,
+            treeGroups: this.treeGroups,
+            fireflies: this.fireflies,
+            nodeMeshes: this.nodeMeshes,
+            controls: this.controls,
+            DETAIL_MODE_SCREEN_SIZE_PERCENT: this.DETAIL_MODE_SCREEN_SIZE_PERCENT,
+            DETAIL_MODE_ZOOM: this.DETAIL_MODE_ZOOM,
+            DETAIL_MODE_ANIMATION_TIME: this.DETAIL_MODE_ANIMATION_TIME,
+            DETAIL_MODE_ACTOR_RADIUS: this.DETAIL_MODE_ACTOR_RADIUS,
+            initialCameraDistance: this.initialCameraDistance,
+            onZoomChange: (newZoom) => {
+                this.currentZoom = newZoom;
+                this.updateCameraZoom();
+            },
+            onCameraTargetChange: (newTarget) => {
+                this.cameraTarget.copy(newTarget);
+                // Обновляем позицию камеры с учетом текущего зума
+                this.updateCameraPosition();
+            },
+            onCameraPositionChange: (newPosition) => {
+                this.camera.position.copy(newPosition);
+            },
+            onStateChange: (isActive, node) => {
+                // Синхронизируем состояние с main.js
+                this.isDetailMode = isActive;
+                this.detailModeNode = node;
+            }
+        });
     }
     
-    setupMouseControls() {
-        // cameraDistance уже установлен в init()
-        
-        // Обработка нажатия мыши
-        this.container.addEventListener('mousedown', (event) => {
-            // В режиме детального просмотра блокируем все взаимодействия мыши
-            if (this.isDetailMode) {
-                return;
+    /**
+     * Проверить клик по узлу (вызывается из Controls перед началом перетаскивания)
+     */
+    checkNodeClick(event) {
+        // В режиме детального просмотра блокируем все взаимодействия мыши
+        if (this.isDetailMode) {
+            return true; // Блокируем перетаскивание
+        }
+
+        if (event.button === 0) { // Левая кнопка мыши
+            // Проверяем клик по узлу
+            this.mouse.x = (event.clientX / this.container.clientWidth) * 2 - 1;
+            this.mouse.y = -(event.clientY / this.container.clientHeight) * 2 + 1;
+
+            // Обновляем матрицы всех объектов перед raycasting
+            this.scene.updateMatrixWorld(true);
+
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+
+            // Проверяем пересечения со всеми узлами
+            const allMeshes = this.nodeMeshes.map(n => n.mesh);
+            const intersects = this.raycaster.intersectObjects(allMeshes, true);
+
+            if (intersects.length > 0) {
+                // Клик по узлу - обрабатываем клик
+                const clickedMesh = intersects[0].object;
+                this.handleNodeClick(clickedMesh);
+                event.preventDefault();
+                event.stopPropagation();
+                return true; // Блокируем перетаскивание
             }
-
-            if (event.button === 0) { // Левая кнопка мыши
-                // Сначала проверяем клик по узлу
-                this.mouse.x = (event.clientX / this.container.clientWidth) * 2 - 1;
-                this.mouse.y = -(event.clientY / this.container.clientHeight) * 2 + 1;
-
-                // Обновляем матрицы всех объектов перед raycasting
-                this.scene.updateMatrixWorld(true);
-
-                this.raycaster.setFromCamera(this.mouse, this.camera);
-
-                // Проверяем пересечения со всеми узлами
-                const allMeshes = this.nodeMeshes.map(n => n.mesh);
-                const intersects = this.raycaster.intersectObjects(allMeshes, true);
-
-                if (intersects.length > 0) {
-                    // Клик по узлу - не начинаем перетаскивание
-                    const clickedMesh = intersects[0].object;
-                    this.handleNodeClick(clickedMesh);
-                    event.preventDefault();
-                    event.stopPropagation();
-                    return;
-                }
-
-                // Клик не по узлу - начинаем перетаскивание
-                this.isDragging = true;
-                this.previousMousePosition = {
-                    x: event.clientX,
-                    y: event.clientY
-                };
-                this.container.style.cursor = 'grabbing';
-            }
-        });
+        }
         
-        // Обработка движения мыши
-        this.container.addEventListener('mousemove', (event) => {
-            if (this.isDragging) {
-                const deltaX = event.clientX - this.previousMousePosition.x;
-                const deltaY = event.clientY - this.previousMousePosition.y;
-                
-                // Панорамирование: перемещаем цель камеры в плоскости XZ (горизонтальная плоскость)
-                // Вычисляем размер видимой области на текущем расстоянии
-                const distanceToTarget = this.camera.position.distanceTo(this.cameraTarget);
-                const fov = this.camera.fov * (Math.PI / 180);
-                const visibleHeight = 2 * Math.tan(fov / 2) * distanceToTarget;
-                const visibleWidth = visibleHeight * this.camera.aspect;
-                
-                // Скорость панорамирования: перемещение мыши в пикселях -> перемещение в мировых координатах
-                // Это обеспечивает равномерное панорамирование независимо от зума
-                const panSpeedX = visibleWidth / this.container.clientWidth;
-                const panSpeedZ = visibleHeight / this.container.clientHeight;
-                
-                // Вычисляем смещение в плоскости XZ (горизонтальная плоскость)
-                // При движении мыши вправо - сцена двигается влево (отрицательное X)
-                // При движении мыши вверх - сцена двигается назад (отрицательное Z)
-                const panDelta = new THREE.Vector3(
-                    -deltaX * panSpeedX,
-                    0,
-                    -deltaY * panSpeedZ
-                );
-                
-                // Обновляем только цель камеры
-                this.cameraTarget.add(panDelta);
-                
-                // Пересчитываем позицию камеры на основе новой цели
-                this.updateCameraPosition();
-                
-                this.previousMousePosition = {
-                    x: event.clientX,
-                    y: event.clientY
-                };
-            }
-        });
-        
-        // Обработка отпускания мыши
-        this.container.addEventListener('mouseup', () => {
-            this.isDragging = false;
-            this.container.style.cursor = 'default';
-        });
-        
-        // Обработка выхода мыши за пределы canvas
-        this.container.addEventListener('mouseleave', () => {
-            this.isDragging = false;
-            this.container.style.cursor = 'default';
-        });
+        return false; // Не клик по узлу, можно начинать перетаскивание
     }
     
     updateCameraPosition() {
-        // Вычисляем направление от цели к камере (фиксированный угол сверху)
-        // ВАЖНО: создаем новый вектор каждый раз, чтобы избежать мутации
+        // В режиме детального просмотра не синхронизируем с CameraManager
+        // (cameraTarget управляется через DetailModeSystem)
+        if (!this.isDetailMode) {
+            // Синхронизируем cameraTarget с CameraManager только вне детального режима
+            this.cameraTarget = this.cameraManager.getTarget();
+        }
+        
+        // Просто обновляем позицию камеры напрямую (для совместимости со старой логикой)
         const baseDirection = new THREE.Vector3(0, 800, 1000).normalize();
         const baseDistance = Math.sqrt(800 * 800 + 1000 * 1000);
-        
-        // Расстояние с учетом зума
         const distance = baseDistance / this.currentZoom;
-        
-        // Позиция камеры = цель + направление * расстояние
-        // Клонируем вектор направления, чтобы избежать мутации
         const offset = baseDirection.clone().multiplyScalar(distance);
+        
         this.camera.position.copy(this.cameraTarget).add(offset);
-        
-        // Камера всегда смотрит на цель
         this.camera.lookAt(this.cameraTarget);
-        
-        // Обновляем матрицу проекции камеры
         this.camera.updateProjectionMatrix();
     }
     
@@ -669,7 +527,7 @@ class RadialTreeVisualization {
 
             // Удаляем старые деревья
             this.treeGroups.forEach(treeGroup => {
-                this.scene.remove(treeGroup);
+                this.sceneManager.remove(treeGroup);
                 treeGroup.traverse((child) => {
                     if (child.geometry) child.geometry.dispose();
                     if (child.material) {
@@ -697,6 +555,12 @@ class RadialTreeVisualization {
                 });
             });
             this.fireflies = [];
+            
+            // Обновляем ссылки в DetailModeSystem после очистки
+            if (this.detailModeSystem) {
+                this.detailModeSystem.treeGroups = this.treeGroups;
+                this.detailModeSystem.fireflies = this.fireflies;
+            }
 
         // Создаем кэш детей для быстрой фильтрации
         const childrenCache = new Map();
@@ -803,7 +667,7 @@ class RadialTreeVisualization {
                 ]);
                 
                 const material = new THREE.LineBasicMaterial({
-                    color: 0x888888,
+                    color: DEFAULT_NODE_COLOR,
                     opacity: 0.5,
                     transparent: true
                 });
@@ -823,15 +687,14 @@ class RadialTreeVisualization {
                 const isRoot = node.level === 0;
                 const radius = getNodeRadius(node, isRoot);
             
-            const geometry = new THREE.SphereGeometry(radius, 32, 32);
+            const geometry = new THREE.SphereGeometry(radius, SPHERE_SEGMENTS, SPHERE_RINGS);
             
             let material;
             if (isRoot) {
                 // Корневые узлы (вызовы) - одинаковый золотистый цвет для всех
-                const rootColor = 0xffd700; // Золотистый цвет
                 material = new THREE.MeshStandardMaterial({
-                    color: rootColor,
-                    emissive: rootColor,
+                    color: ROOT_NODE_COLOR,
+                    emissive: ROOT_NODE_COLOR,
                     emissiveIntensity: 0.5,
                     metalness: 0.3,
                     roughness: 0.2
@@ -839,11 +702,11 @@ class RadialTreeVisualization {
             } else {
                     // Обычные узлы - цвет зависит от уровня
                     const levelColors = [
-                        0x4a90e2, // Синий для уровня 1 (сезоны)
-                        0x7b68ee, // Фиолетовый для уровня 2 (режиссеры)
-                        0x20b2aa, // Бирюзовый для уровня 3 (серии)
+                        LEVEL_1_COLOR, // Синий для уровня 1 (сезоны)
+                        LEVEL_2_COLOR, // Фиолетовый для уровня 2 (режиссеры)
+                        LEVEL_3_COLOR, // Бирюзовый для уровня 3 (серии)
                     ];
-                    const levelColor = levelColors[node.level - 1] || 0x888888;
+                    const levelColor = levelColors[node.level - 1] || DEFAULT_NODE_COLOR;
                 material = new THREE.MeshStandardMaterial({
                         color: levelColor,
                     metalness: 0.5,
@@ -868,7 +731,7 @@ class RadialTreeVisualization {
             // Добавляем обводку (Edges)
             const edges = new THREE.EdgesGeometry(geometry);
             const edgeMaterial = new THREE.LineBasicMaterial({
-                    color: isRoot ? 0xffffff : 0xffffff,
+                    color: NODE_MATERIAL_COLOR,
                 opacity: 0.3,
                 transparent: true
             });
@@ -892,24 +755,23 @@ class RadialTreeVisualization {
                 const textHeight = fontSize;
                 
                 // Увеличиваем разрешение canvas для четкости при масштабировании
-                const scaleFactor = 4;
-                canvas.width = (textWidth + 20) * scaleFactor;
-                canvas.height = (textHeight + 20) * scaleFactor;
+                canvas.width = (textWidth + TEXT_PADDING) * TEXT_SCALE_FACTOR;
+                canvas.height = (textHeight + TEXT_PADDING) * TEXT_SCALE_FACTOR;
 
                 // Масштабируем контекст
-                context.scale(scaleFactor, scaleFactor);
+                context.scale(TEXT_SCALE_FACTOR, TEXT_SCALE_FACTOR);
                 
                 // Перерисовываем текст
-                    context.fillStyle = '#ffffff';
-                    context.strokeStyle = '#000000';
-                context.lineWidth = 3;
+                context.fillStyle = TEXT_COLOR;
+                context.strokeStyle = TEXT_STROKE_COLOR;
+                context.lineWidth = TEXT_STROKE_WIDTH;
                 context.font = `bold ${fontSize}px Arial`;
                 context.textAlign = 'center';
                 context.textBaseline = 'middle';
                 
                 // Рисуем текст с обводкой (координаты без учета масштаба контекста)
-                context.strokeText(node.text, (textWidth + 20) / 2, (textHeight + 20) / 2);
-                context.fillText(node.text, (textWidth + 20) / 2, (textHeight + 20) / 2);
+                context.strokeText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
+                context.fillText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
                 
                 // Создаем текстуру из canvas
                 const texture = new THREE.CanvasTexture(canvas);
@@ -926,7 +788,7 @@ class RadialTreeVisualization {
                 // Позиционируем текст над сферой
                 sprite.position.copy(node.position);
                     sprite.position.y += radius + 90; // Увеличено в 3 раза (30 * 3)
-                    sprite.scale.set((canvas.width / scaleFactor) * 1.5, (canvas.height / scaleFactor) * 1.5, 1); // Увеличено в 3 раза (0.5 * 3), скорректировано с учетом высокого разрешения
+                    sprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1); // Увеличено в 3 раза (0.5 * 3), скорректировано с учетом высокого разрешения
                     sprite.renderOrder = 1; // Текст всегда поверх сфер
 
                     treeGroup.add(sprite);
@@ -1004,16 +866,16 @@ class RadialTreeVisualization {
             treeGroup.rotation.y = (this.graphRotation.y * Math.PI) / 180;
             treeGroup.rotation.z = (this.graphRotation.z * Math.PI) / 180;
             
-            this.scene.add(treeGroup);
+            this.sceneManager.add(treeGroup);
             this.treeGroups.push(treeGroup);
         });
 
-        updateLoadingProgress(80); // Деревья созданы
+            this.loadingScreen.updateProgress(80); // Деревья созданы
 
         // Отложенное создание светлячков для производительности
         setTimeout(() => {
             this.createFirefliesForTrees(trees, childrenCache);
-            updateLoadingProgress(100); // Светлячки созданы
+            this.loadingScreen.updateProgress(100); // Светлячки созданы
         }, 100);
 
     }
@@ -1061,7 +923,8 @@ class RadialTreeVisualization {
         // В режиме детального просмотра зум заблокирован
         if (this.isDetailMode) return;
         
-        this.currentZoom = Math.min(this.currentZoom + this.zoomStep, this.maxZoom);
+        this.cameraManager.zoomIn();
+        this.currentZoom = this.cameraManager.getZoom();
         this.updateCameraZoom();
     }
     
@@ -1069,7 +932,8 @@ class RadialTreeVisualization {
         // В режиме детального просмотра зум заблокирован
         if (this.isDetailMode) return;
         
-        this.currentZoom = Math.max(this.currentZoom - this.zoomStep, this.minZoom);
+        this.cameraManager.zoomOut();
+        this.currentZoom = this.cameraManager.getZoom();
         this.updateCameraZoom();
     }
     
@@ -1077,11 +941,18 @@ class RadialTreeVisualization {
         // В режиме детального просмотра зум заблокирован
         if (this.isDetailMode) return;
         
-        this.currentZoom = 1;
+        this.cameraManager.resetZoom();
+        this.currentZoom = this.cameraManager.getZoom();
         this.updateCameraZoom();
     }
     
     updateCameraZoom() {
+        // В режиме детального просмотра зум управляется через DetailModeSystem
+        if (this.isDetailMode) {
+            // Просто обновляем позицию камеры с текущим зумом
+            this.updateCameraPosition();
+            return;
+        }
         
         // Если есть выделенный узел, нужно обновить его целевую позицию камеры с учетом зума
         // И СРАЗУ применить новую позицию, чтобы избежать конфликта с анимацией
@@ -1111,10 +982,8 @@ class RadialTreeVisualization {
             
             // ВАЖНО: Сразу применяем новую позицию камеры, чтобы зум работал мгновенно
             // А не ждал анимации lerp
-            this.camera.position.copy(nodeData.targetCameraPosition);
             this.cameraTarget.copy(nodeData.targetCameraTarget);
-            this.camera.lookAt(this.cameraTarget);
-            this.camera.updateProjectionMatrix();
+            this.updateCameraPosition();
             
             // Отмечаем, что позиция камеры уже применена, чтобы анимация не конфликтовала
             nodeData.cameraPositionApplied = true;
@@ -1236,7 +1105,7 @@ class RadialTreeVisualization {
                                 // Ядро - обновляем геометрию
                                 if (child.geometry) {
                                     child.geometry.dispose();
-                                    child.geometry = new THREE.SphereGeometry(value * 0.3, 32, 32);
+                                    child.geometry = new THREE.SphereGeometry(value * FIREFLY_CORE_SIZE_MULTIPLIER, SPHERE_SEGMENTS, SPHERE_RINGS);
                                 }
                             } else if (child instanceof THREE.Sprite) {
                                 // Спрайты свечения - обновляем масштаб
@@ -1291,7 +1160,7 @@ class RadialTreeVisualization {
                     detailModeSizeValue.textContent = String(value);
                     // Если мы в режиме детального просмотра, обновляем размер узла
                     if (this.isDetailMode && this.detailModeNode) {
-                        this.updateDetailModeNodeScale();
+                        this.detailModeSystem.setScreenSizePercent(value);
                     }
                 });
             }
@@ -1302,85 +1171,15 @@ class RadialTreeVisualization {
         const width = window.innerWidth;
         const height = window.innerHeight;
         
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(width, height);
+        this.cameraManager.updateAspect(width / height);
+        this.rendererManager.resize(width, height);
     }
     
     createFirefly(centerPosition, initialAngle) {
-        // Создаем текстуру с радиальным градиентом для эффекта свечения
-        const createGlowTexture = (size) => {
-            const canvas = document.createElement('canvas');
-            canvas.width = size;
-            canvas.height = size;
-            const context = canvas.getContext('2d');
-            
-            const centerX = size / 2;
-            const centerY = size / 2;
-            const radius = size / 2;
-            
-            // Создаем радиальный градиент
-            const gradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
-            gradient.addColorStop(0, 'rgba(0, 200, 255, 1)'); // Яркий центр
-            gradient.addColorStop(0.3, 'rgba(0, 200, 255, 0.8)');
-            gradient.addColorStop(0.6, 'rgba(0, 180, 255, 0.4)');
-            gradient.addColorStop(0.8, 'rgba(0, 160, 255, 0.15)');
-            gradient.addColorStop(1, 'rgba(0, 160, 255, 0)'); // Прозрачные края
-            
-            context.fillStyle = gradient;
-            context.fillRect(0, 0, size, size);
-            
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.needsUpdate = true;
-            return texture;
-        };
-        
-        // Создаем группу для светлячка
-        const fireflyGroup = new THREE.Group();
-        
-        // Ядро - маленькая яркая сфера
-        const coreGeometry = new THREE.SphereGeometry(this.fireflySize * 0.3, 32, 32);
-        const coreMaterial = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            emissive: 0x00c8ff,
-            emissiveIntensity: 5.0,
-            metalness: 0.0,
-            roughness: 0.0
-        });
-        const core = new THREE.Mesh(coreGeometry, coreMaterial);
-        fireflyGroup.add(core);
-        
-        // Создаем спрайт с радиальным градиентом для эффекта свечения
-        const glowTexture = createGlowTexture(256);
-        const glowMaterial = new THREE.SpriteMaterial({
-            map: glowTexture,
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-        });
-        const glowSprite = new THREE.Sprite(glowMaterial);
-        glowSprite.scale.set(this.fireflySize * 4, this.fireflySize * 4, 1);
-        fireflyGroup.add(glowSprite);
-        
-        // Дополнительный слой свечения (больше размером)
-        const outerGlowTexture = createGlowTexture(512);
-        const outerGlowMaterial = new THREE.SpriteMaterial({
-            map: outerGlowTexture,
-            transparent: true,
-            opacity: 0.6,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-        });
-        const outerGlowSprite = new THREE.Sprite(outerGlowMaterial);
-        outerGlowSprite.scale.set(this.fireflySize * 6, this.fireflySize * 6, 1);
-        fireflyGroup.add(outerGlowSprite);
-        
-        return fireflyGroup;
-    }
-    
-    setupNodeClickHandler() {
-        // Обработчик клика уже добавлен в setupMouseControls
-        // Здесь только инициализация
+        const firefly = new Firefly(centerPosition, initialAngle, this.fireflySize);
+        firefly.setOrbitRadius(this.fireflyOrbitRadius);
+        firefly.setSpeed(this.fireflyRotationSpeed);
+        return firefly.mesh;
     }
     
     handleNodeClick(mesh) {
@@ -1470,7 +1269,7 @@ class RadialTreeVisualization {
             const edgeLines = nodeData.mesh.children[0];
             if (edgeLines instanceof THREE.LineSegments) {
                 edgeLines.material.opacity = 1.0;
-                edgeLines.material.color.setHex(0xffff00); // Желтый цвет обводки
+                edgeLines.material.color.setHex(EDGE_LINE_COLOR); // Желтый цвет обводки
             }
         }
     }
@@ -1549,36 +1348,23 @@ class RadialTreeVisualization {
 
     // Вход в режим детального просмотра эпизода
     enterDetailMode(nodeData) {
-        console.log('Entering detail mode for episode:', nodeData.node.text);
-
-        this.isDetailMode = true;
-        this.detailModeNode = nodeData;
-
-        // Сохраняем исходный зум для восстановления при выходе
-        this.detailModeOriginalZoom = this.currentZoom;
-
-        // Сохраняем исходные состояния всех деревьев
-        this.detailModeOriginalStates = [];
-        this.treeGroups.forEach(treeGroup => {
-            this.detailModeOriginalStates.push({
-                group: treeGroup,
-                originalPosition: treeGroup.position.clone(),
-                originalScale: treeGroup.scale.clone(),
-                originalOpacity: treeGroup.children.length > 0 ? treeGroup.children[0].material.opacity : 1
-            });
-        });
-
-        // Блокируем элементы управления зумом
-        this.disableZoomControls();
-
-        // Создаем оверлей затемнения
-        this.createDetailModeOverlay();
-
-        // Создаем кнопку выхода
-        this.createDetailModeExitButton();
-
-        // Анимируем вход в режим
-        this.animateDetailModeEnter();
+        // Сохраняем исходную позицию камеры для восстановления
+        if (!this.originalCameraPosition) {
+            this.originalCameraPosition = this.camera.position.clone();
+            this.originalCameraTarget = this.cameraTarget.clone();
+        }
+        
+        // Используем DetailModeSystem
+        this.detailModeSystem.enter(
+            nodeData,
+            this.currentZoom,
+            this.originalCameraPosition,
+            this.originalCameraTarget
+        );
+        
+        // Обновляем флаги для обратной совместимости
+        this.isDetailMode = this.detailModeSystem.isActive();
+        this.detailModeNode = this.detailModeSystem.getCurrentNode();
     }
 
     // Создание оверлея затемнения для режима детального просмотра
@@ -1587,28 +1373,7 @@ class RadialTreeVisualization {
         const geometry = new THREE.PlaneGeometry(50000, 50000);
 
         // Создаем материал с радиальным градиентом (от центра к краям)
-        const canvas = document.createElement('canvas');
-        canvas.width = 1024;  // Увеличиваем разрешение
-        canvas.height = 1024;
-        const context = canvas.getContext('2d');
-
-        const centerX = canvas.width / 2;
-        const centerY = canvas.height / 2;
-        const radius = canvas.width / 2;
-
-        // Создаем более плавный градиент
-        const gradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
-        gradient.addColorStop(0.0, 'rgba(0, 0, 0, 0.0)');  // Полностью прозрачный центр
-        gradient.addColorStop(0.4, 'rgba(0, 0, 0, 0.0)');  // Еще прозрачный
-        gradient.addColorStop(0.6, 'rgba(0, 0, 0, 0.1)');  // Начинаем затемнять
-        gradient.addColorStop(0.8, 'rgba(0, 0, 0, 0.3)');  // Среднее затемнение
-        gradient.addColorStop(1.0, 'rgba(0, 0, 0, 0.6)');  // Темные края
-
-        context.fillStyle = gradient;
-        context.fillRect(0, 0, canvas.width, canvas.height);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
+        const texture = TextureGenerator.createRadialGradientTexture(1024, 1024);
 
         const material = new THREE.MeshBasicMaterial({
             map: texture,
@@ -1669,11 +1434,6 @@ class RadialTreeVisualization {
             const selectedMesh = nodeData.mesh;
             const selectedTextSprite = nodeData.textSprite;
             
-            if (progress === 0) {
-                console.log('[DETAIL MODE] Starting hide animation for trees');
-                console.log('[DETAIL MODE] Selected mesh:', selectedMesh);
-                console.log('[DETAIL MODE] Selected text sprite:', selectedTextSprite);
-            }
             
             // Сначала скрываем все объекты
             const selectedNodeId = nodeData.node.id;
@@ -1689,9 +1449,6 @@ class RadialTreeVisualization {
                         firefly.mesh === object && firefly.nodeId === selectedNodeId
                     );
                     if (isSelectedFirefly) {
-                        if (progress === 0 || (progress >= 0.5 && progress < 0.52)) {
-                            console.log('[DETAIL MODE] traverse() - Skipping selected firefly, visible:', object.visible, 'opacity:', object.material ? object.material.opacity : 'no material');
-                        }
                         return; // Пропускаем светлячки выбранного узла
                     }
                     
@@ -1710,9 +1467,6 @@ class RadialTreeVisualization {
                     }
                     
                     if (isChildOfSelectedFirefly) {
-                        if (progress === 0 || (progress >= 0.5 && progress < 0.52)) {
-                            console.log('[DETAIL MODE] traverse() - Skipping child of selected firefly, visible:', object.visible, 'opacity:', object.material ? object.material.opacity : 'no material');
-                        }
                         return; // Пропускаем дочерние элементы светлячков выбранного узла
                     }
                     
@@ -1794,14 +1548,8 @@ class RadialTreeVisualization {
                             }
                         }
                     });
-                    if (progress === 0 || (progress >= 0.5 && progress < 0.52)) {
-                        console.log('[DETAIL MODE] Setting firefly', index, 'visibility. visible:', firefly.mesh.visible, 'parent:', firefly.mesh.parent, 'parent.visible:', firefly.mesh.parent ? firefly.mesh.parent.visible : 'no parent');
-                    }
                 }
             });
-            if (progress === 0 || (progress >= 0.5 && progress < 0.52)) {
-                console.log('[DETAIL MODE] Fireflies visibility set count:', fireflyVisibilitySetCount, 'for selected node:', selectedNodeId);
-            }
             
             // КРИТИЧЕСКИ ВАЖНО: Убеждаемся, что родительская группа выбранного узла видима
             // Если родитель скрыт, дочерние объекты тоже не видны!
@@ -1843,62 +1591,21 @@ class RadialTreeVisualization {
                 selectedTextSprite.material.transparent = false;
             }
             
-            // Логируем состояние в середине анимации
-            if (progress >= 0.5 && progress < 0.52) {
-                console.log('[DETAIL MODE] Mid-animation - Mesh visible:', selectedMesh.visible);
-                console.log('[DETAIL MODE] Mid-animation - Mesh parent visible:', selectedMesh.parent ? selectedMesh.parent.visible : 'no parent');
-                console.log('[DETAIL MODE] Mid-animation - Mesh material opacity:', selectedMesh.material ? (Array.isArray(selectedMesh.material) ? selectedMesh.material[0].opacity : selectedMesh.material.opacity) : 'no material');
-            }
-            
-            if (progress === 0) {
-                let hiddenCount = 0;
-                let visibleCount = 0;
-                this.treeGroups.forEach(treeGroup => {
-                    treeGroup.traverse((object) => {
-                        if (object === selectedMesh || object === selectedTextSprite) {
-                            visibleCount++;
-                        } else {
-                            hiddenCount++;
-                        }
-                    });
-                });
-                console.log('[DETAIL MODE] Objects to hide:', hiddenCount);
-                console.log('[DETAIL MODE] Objects to keep visible:', visibleCount);
-            }
-
             // Удаляем только светлячки, которые НЕ принадлежат выбранному узлу
             // Светлячки выбранного узла остаются видимыми и продолжают крутиться
             if (progress === 0) {
                 const selectedNodeId = nodeData.node.id;
-                console.log('[DETAIL MODE] Processing fireflies. Selected node ID:', selectedNodeId);
-                console.log('[DETAIL MODE] Total fireflies:', this.fireflies.length);
-                let removedCount = 0;
-                let keptCount = 0;
-                let noParentCount = 0;
-                this.fireflies.forEach((firefly, index) => {
-                    if (firefly.mesh) {
-                        if (firefly.mesh.parent) {
-                            // Удаляем только светлячки других узлов
-                            if (firefly.nodeId !== selectedNodeId) {
-                                firefly.mesh.parent.remove(firefly.mesh);
-                                removedCount++;
-                            } else {
-                                // Светлячки выбранного узла остаются видимыми
-                                firefly.mesh.visible = true;
-                                keptCount++;
-                                console.log('[DETAIL MODE] Kept firefly', index, 'for node', firefly.nodeId, 'visible:', firefly.mesh.visible, 'parent:', firefly.mesh.parent);
-                            }
+                this.fireflies.forEach((firefly) => {
+                    if (firefly.mesh && firefly.mesh.parent) {
+                        // Удаляем только светлячки других узлов
+                        if (firefly.nodeId !== selectedNodeId) {
+                            firefly.mesh.parent.remove(firefly.mesh);
                         } else {
-                            noParentCount++;
-                            console.log('[DETAIL MODE] Firefly', index, 'has no parent, nodeId:', firefly.nodeId);
+                            // Светлячки выбранного узла остаются видимыми
+                            firefly.mesh.visible = true;
                         }
-                    } else {
-                        console.log('[DETAIL MODE] Firefly', index, 'has no mesh');
                     }
                 });
-                console.log('[DETAIL MODE] Removed fireflies:', removedCount, 'out of', this.fireflies.length);
-                console.log('[DETAIL MODE] Kept fireflies for selected node:', keptCount);
-                console.log('[DETAIL MODE] Fireflies without parent:', noParentCount);
             }
 
             // Увеличиваем и центрируем выбранный узел
@@ -1909,12 +1616,6 @@ class RadialTreeVisualization {
             const currentScale = baseScale.clone().lerp(targetScale, easedProgress);
             nodeData.mesh.scale.copy(currentScale);
 
-            if (progress === 0) {
-                console.log('[DETAIL MODE] Node:', nodeData.node.text);
-                console.log('[DETAIL MODE] Initial mesh position:', nodeData.mesh.position.clone());
-                console.log('[DETAIL MODE] Has text sprite:', !!nodeData.textSprite);
-                console.log('[DETAIL MODE] Mesh visible after traverse:', nodeData.mesh.visible);
-            }
 
             // Масштабируем текст узла
             if (nodeData.textSprite && nodeData.originalSpriteScale) {
@@ -1932,10 +1633,6 @@ class RadialTreeVisualization {
                 nodeData.textSprite.position.set(0, nodeRadius + 90, 0);
             }
 
-            if (progress >= 0.5 && progress < 0.52) {
-                console.log('[DETAIL MODE] Mid-animation mesh position:', nodeData.mesh.position.clone());
-                console.log('[DETAIL MODE] Current scale:', currentScale);
-            }
 
             // Показываем оверлей затемнения
             if (this.detailModeOverlay) {
@@ -1944,7 +1641,6 @@ class RadialTreeVisualization {
 
             // Создаем метки актеров в конце анимации
             if (progress >= 0.8 && this.detailModeActorLabels.length === 0) {
-                console.log('[DETAIL MODE] Creating actor labels at progress:', progress);
                 this.createActorLabels();
             }
 
@@ -1962,14 +1658,8 @@ class RadialTreeVisualization {
                 requestAnimationFrame(animate);
             } else {
                 // Анимация завершена
-                console.log('[DETAIL MODE] Enter animation completed');
-                console.log('[DETAIL MODE] Final mesh position:', nodeData.mesh.position.clone());
-                console.log('[DETAIL MODE] Overlay opacity:', this.detailModeOverlay ? this.detailModeOverlay.material.opacity : 'N/A');
-                console.log('[DETAIL MODE] Actor labels count:', this.detailModeActorLabels.length);
-                
                 // На всякий случай создаем метки, если их еще нет
                 if (this.detailModeActorLabels.length === 0) {
-                    console.log('[DETAIL MODE] Creating actor labels at end of animation');
                     this.createActorLabels();
                 }
             }
@@ -1980,17 +1670,9 @@ class RadialTreeVisualization {
 
     // Выход из режима детального просмотра
     exitDetailMode() {
-        console.log('[EXIT MODE] Exiting detail mode');
-        console.log('[EXIT MODE] isDetailMode:', this.isDetailMode);
-        console.log('[EXIT MODE] detailModeNode:', this.detailModeNode);
-
-        // Запускаем анимацию зума сразу (начинается на 0.5 секунды раньше)
-        this.animateZoomRestore();
-
-        // Запускаем анимацию возврата узла через 0.5 секунды
-        setTimeout(() => {
-            this.animateNodeReturn();
-        }, 500);
+        // Используем DetailModeSystem
+        // Флаги обновляются через onStateChange callback в DetailModeSystem
+        this.detailModeSystem.exit();
     }
 
     // Анимация восстановления зума (начинается сразу)
@@ -2076,6 +1758,9 @@ class RadialTreeVisualization {
             selectedMesh.visible = true;
             if (selectedTextSprite) {
                 selectedTextSprite.visible = true;
+                if (selectedTextSprite.material instanceof THREE.SpriteMaterial) {
+                    selectedTextSprite.material.opacity = 1.0;
+                }
             }
             
             // Убеждаемся, что все дочерние элементы выбранного узла (edgeLines) остаются видимыми
@@ -2085,11 +1770,11 @@ class RadialTreeVisualization {
                     if (child.material) {
                         if (Array.isArray(child.material)) {
                             child.material.forEach(mat => {
-                                mat.opacity = 1;
+                                mat.opacity = 1.0;
                                 mat.transparent = false;
                             });
                         } else {
-                            child.material.opacity = 1;
+                            child.material.opacity = 1.0;
                             child.material.transparent = false;
                         }
                     }
@@ -2100,13 +1785,45 @@ class RadialTreeVisualization {
             if (selectedMesh.material) {
                 if (Array.isArray(selectedMesh.material)) {
                     selectedMesh.material.forEach(mat => {
-                        mat.opacity = 1;
+                        mat.opacity = 1.0;
                         mat.transparent = false;
                     });
                 } else {
-                    selectedMesh.material.opacity = 1;
+                    selectedMesh.material.opacity = 1.0;
                     selectedMesh.material.transparent = false;
                 }
+            }
+            
+            // В конце анимации (когда progress = 1) восстанавливаем исходные значения
+            if (progress >= 1) {
+                this.treeGroups.forEach(treeGroup => {
+                    treeGroup.traverse((object) => {
+                        object.visible = true;
+                        
+                        // Восстанавливаем исходные значения opacity и transparent
+                        const originalState = this.detailModeOriginalObjectStates.get(object);
+                        if (originalState) {
+                            if (object.material) {
+                                if (Array.isArray(object.material) && originalState.materials) {
+                                    object.material.forEach((mat, index) => {
+                                        if (originalState.materials[index]) {
+                                            mat.opacity = originalState.materials[index].opacity;
+                                            mat.transparent = originalState.materials[index].transparent;
+                                        }
+                                    });
+                                } else if (!Array.isArray(object.material)) {
+                                    object.material.opacity = originalState.opacity;
+                                    object.material.transparent = originalState.transparent;
+                                }
+                            }
+                            
+                            if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
+                                object.material.opacity = originalState.opacity;
+                                object.material.transparent = originalState.transparent;
+                            }
+                        }
+                    });
+                });
             }
             
             if (selectedTextSprite && selectedTextSprite.material) {
@@ -2176,7 +1893,11 @@ class RadialTreeVisualization {
 
             // Возвращаем камеру
             if (this.originalCameraPosition) {
-                this.camera.position.lerp(this.originalCameraPosition, easedProgress * 0.1);
+                // Синхронизируем с CameraManager - используем lerp для плавного перехода
+                const newTarget = this.originalCameraTarget.clone().lerp(this.cameraTarget, 1 - easedProgress * 0.1);
+                this.cameraManager.setTarget(newTarget);
+                this.cameraTarget = this.cameraManager.getTarget();
+                this.camera = this.cameraManager.getCamera();
                 this.cameraTarget.lerp(this.originalCameraTarget || new THREE.Vector3(0, 0, 0), easedProgress * 0.1);
                 this.camera.lookAt(this.cameraTarget);
             }
@@ -2185,10 +1906,7 @@ class RadialTreeVisualization {
                 requestAnimationFrame(animate);
             } else {
                 // Очищаем режим
-                console.log('[EXIT MODE] Exit animation completed, cleaning up');
                 this.cleanupDetailMode();
-                console.log('[EXIT MODE] Cleanup completed');
-                console.log('[EXIT MODE] isDetailMode after cleanup:', this.isDetailMode);
             }
         };
 
@@ -2221,14 +1939,62 @@ class RadialTreeVisualization {
         });
         this.detailModeActorLabels = [];
 
-        // Восстанавливаем деревья
-        this.detailModeOriginalStates.forEach(state => {
-            this.setGroupOpacity(state.group, state.originalOpacity, state.originalOpacity < 1);
+        // Восстанавливаем деревья - восстанавливаем исходные значения opacity и transparent
+        this.treeGroups.forEach(treeGroup => {
+            treeGroup.traverse((object) => {
+                // Восстанавливаем видимость
+                object.visible = true;
+                
+                // Восстанавливаем исходные значения opacity и transparent
+                const originalState = this.detailModeOriginalObjectStates.get(object);
+                if (originalState) {
+                    if (object.material) {
+                        if (Array.isArray(object.material) && originalState.materials) {
+                            object.material.forEach((mat, index) => {
+                                if (originalState.materials[index]) {
+                                    mat.opacity = originalState.materials[index].opacity;
+                                    mat.transparent = originalState.materials[index].transparent;
+                                }
+                            });
+                        } else if (!Array.isArray(object.material)) {
+                            object.material.opacity = originalState.opacity;
+                            object.material.transparent = originalState.transparent;
+                        }
+                    }
+                    
+                    // Восстанавливаем для спрайтов
+                    if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
+                        object.material.opacity = originalState.opacity;
+                        object.material.transparent = originalState.transparent;
+                        object.visible = true;
+                    }
+                } else {
+                    // Если не нашли сохраненное состояние, устанавливаем значения по умолчанию
+                    if (object.material) {
+                        if (Array.isArray(object.material)) {
+                            object.material.forEach(mat => {
+                                mat.opacity = 1.0;
+                                mat.transparent = false;
+                            });
+                        } else {
+                            object.material.opacity = 1.0;
+                            object.material.transparent = false;
+                        }
+                    }
+                }
+            });
         });
+        
         this.detailModeOriginalStates = null;
+        this.detailModeOriginalObjectStates.clear();
 
         // Разблокируем элементы управления зумом
         this.enableZoomControls();
+        
+        // Разблокируем управление камерой мышью
+        if (this.controls) {
+            this.controls.enable();
+        }
 
         // Сбрасываем флаги
         this.isDetailMode = false;
@@ -2346,34 +2112,24 @@ class RadialTreeVisualization {
 
     // Создание текстовых меток актеров по кругу
     createActorLabels() {
-        console.log('[ACTOR LABELS] Starting createActorLabels()');
-        
         if (!this.detailModeNode) {
-            console.warn('[ACTOR LABELS] No detailModeNode!');
             return;
         }
 
         const nodeData = this.detailModeNode;
         const taskId = nodeData.node.id;
-        console.log('[TECHNOLOGY LABELS] Task ID:', taskId, 'Name:', nodeData.node.text);
 
         // Находим технологии для этой задачи
         // Получаем технологии (дети уровня 3) для задачи (taskId)
         const technologies = mockData.filter(item => item.parentId === taskId);
-        console.log('[TECHNOLOGY LABELS] Found technologies count:', technologies.length);
-        console.log('[TECHNOLOGY LABELS] Technologies:', technologies);
 
         if (technologies.length === 0) {
             // Даже если технологий нет, создаем одну метку "Нет информации"
             technologies.push({ text: 'Нет информации о технологиях' });
-            console.log('[TECHNOLOGY LABELS] No technologies found, using placeholder');
         }
 
         const radius = this.DETAIL_MODE_ACTOR_RADIUS;
         const angleStep = (Math.PI * 2) / technologies.length;
-        
-        console.log('[TECHNOLOGY LABELS] Creating labels at radius:', radius);
-        console.log('[TECHNOLOGY LABELS] Angle step:', angleStep);
 
         technologies.forEach((technology, index) => {
             const angle = index * angleStep;
@@ -2395,10 +2151,9 @@ class RadialTreeVisualization {
             const textHeight = fontSize;
 
             // Увеличиваем разрешение для четкости
-            const scaleFactor = 4;
-            canvas.width = (textWidth + 20) * scaleFactor;
-            canvas.height = (textHeight + 20) * scaleFactor;
-            context.scale(scaleFactor, scaleFactor);
+            canvas.width = (textWidth + TEXT_PADDING) * TEXT_SCALE_FACTOR;
+            canvas.height = (textHeight + TEXT_PADDING) * TEXT_SCALE_FACTOR;
+            context.scale(TEXT_SCALE_FACTOR, TEXT_SCALE_FACTOR);
             context.font = `bold ${fontSize}px Arial`;
             context.textAlign = 'center';
             context.textBaseline = 'middle';
@@ -2422,12 +2177,10 @@ class RadialTreeVisualization {
 
             const sprite = new THREE.Sprite(spriteMaterial);
             sprite.position.set(x, y, z);
-            sprite.scale.set((canvas.width / scaleFactor) * 0.8, (canvas.height / scaleFactor) * 0.8, 1);
+            sprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 0.8, (canvas.height / TEXT_SCALE_FACTOR) * 0.8, 1);
             sprite.renderOrder = 2; // Над всем
 
             this.scene.add(sprite);
-            
-            console.log('[TECHNOLOGY LABELS] Created label', index, 'for:', technology.text, 'at position:', x, y, z);
 
             this.detailModeActorLabels.push({
                 sprite: sprite,
@@ -2435,8 +2188,6 @@ class RadialTreeVisualization {
                 originalPosition: sprite.position.clone()
             });
         });
-        
-        console.log('[ACTOR LABELS] Total labels created:', this.detailModeActorLabels.length);
 
         // Анимируем появление меток актеров
         this.animateActorLabelsAppearance();
@@ -2444,9 +2195,6 @@ class RadialTreeVisualization {
 
     // Анимация появления меток актеров
     animateActorLabelsAppearance() {
-        console.log('[ACTOR LABELS] Starting appearance animation');
-        console.log('[ACTOR LABELS] Labels to animate:', this.detailModeActorLabels.length);
-        
         const startTime = Date.now();
         const duration = 0.5 * 1000; // 0.5 секунды
 
@@ -2474,7 +2222,6 @@ class RadialTreeVisualization {
             if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
-                console.log('[ACTOR LABELS] Appearance animation completed');
             }
         };
 
@@ -2524,8 +2271,16 @@ class RadialTreeVisualization {
         }
     }
     
-    animate() {
-        requestAnimationFrame(() => this.animate());
+    setupAnimationLoop() {
+        // Используем Loop для управления анимацией
+        this.loop.addUpdateCallback((deltaTime) => {
+            this.update(deltaTime);
+        });
+        this.loop.start();
+    }
+    
+    update(deltaTime) {
+        // Перенесена логика из animate()
         
         // Обновляем позиции светлячков
         let detailModeFireflyCount = 0;
@@ -2562,7 +2317,6 @@ class RadialTreeVisualization {
                 
                 // Логируем периодически (каждые 60 кадров, примерно раз в секунду)
                 if (index === 0 && Math.floor(Date.now() / 1000) % 2 === 0) {
-                    console.log('[FIREFLY ANIMATION] Detail mode firefly', index, 'visible:', firefly.mesh.visible, 'position:', firefly.mesh.position, 'orbitRadius:', orbitRadius, 'nodeScale:', nodeScale);
                 }
             }
             
@@ -2574,7 +2328,6 @@ class RadialTreeVisualization {
         
         // Периодически логируем состояние светлячков в детальном режиме
         if (this.isDetailMode && detailModeFireflyCount > 0 && Math.floor(Date.now() / 2000) % 3 === 0) {
-            console.log('[FIREFLY ANIMATION] Detail mode active, fireflies count:', detailModeFireflyCount);
         }
         
         // Анимация выделенного узла
@@ -2593,12 +2346,11 @@ class RadialTreeVisualization {
             
             // Плавное перемещение камеры к узлу (только если позиция не была применена сразу)
             if (!nodeData.cameraPositionApplied) {
-                this.camera.position.lerp(nodeData.targetCameraPosition, this.animationSpeed);
                 this.cameraTarget.lerp(nodeData.targetCameraTarget, this.animationSpeed);
-                this.camera.lookAt(this.cameraTarget);
+                this.updateCameraPosition();
             } else {
                 // Позиция уже применена, но нужно убедиться, что камера смотрит правильно
-                this.camera.lookAt(this.cameraTarget);
+                this.updateCameraPosition();
             }
             
             // Плавное изменение материала
@@ -2635,10 +2387,9 @@ class RadialTreeVisualization {
                 // Достигли целевых значений - применяем финальные значения
                 nodeData.mesh.scale.copy(nodeData.targetScale);
                 if (!nodeData.cameraPositionApplied) {
-                    this.camera.position.copy(nodeData.targetCameraPosition);
                     this.cameraTarget.copy(nodeData.targetCameraTarget);
                 }
-                this.camera.lookAt(this.cameraTarget);
+                this.updateCameraPosition();
                 
                 if (nodeData.highlightMaterial) {
                     nodeData.mesh.material = nodeData.highlightMaterial;
@@ -2756,33 +2507,13 @@ class RadialTreeVisualization {
             }
         });
         
-        this.renderer.render(this.scene, this.camera);
+        this.rendererManager.render(this.scene, this.camera);
     }
 }
 
 // Функция обновления прогресса загрузки
-function updateLoadingProgress(progress) {
-    const loadingBar = document.getElementById('loading-bar');
-    if (loadingBar) {
-        loadingBar.style.width = Math.min(progress, 100) + '%';
-    }
-}
-
-// Функция для скрытия загрузочного экрана
-function hideLoadingScreen() {
-    const loadingScreen = document.getElementById('loading-screen');
-    const canvas = document.getElementById('scene-canvas');
-
-    if (loadingScreen) {
-        loadingScreen.style.opacity = '0';
-        setTimeout(() => {
-            loadingScreen.style.display = 'none';
-            if (canvas) {
-                canvas.style.display = 'block';
-            }
-        }, 500);
-    }
-}
+// Функции перенесены в LoadingScreen класс
+// Используем loadingScreen.updateProgress() и loadingScreen.hide()
 
 // Инициализация при загрузке страницы
 window.addEventListener('DOMContentLoaded', () => {
@@ -2790,7 +2521,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // Скрываем загрузочный экран после инициализации
     setTimeout(() => {
-        hideLoadingScreen();
+        const canvas = document.getElementById('scene-canvas');
+        if (canvas) {
+            canvas.style.display = 'block';
+        }
+        viz.loadingScreen.hide();
     }, 1000); // Даем время на финальную загрузку
 });
 
