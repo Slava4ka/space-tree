@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { CameraManager } from '../core/CameraManager.js';
 
 /**
- * Система управления камерой мышью
- * Отвечает за панорамирование и зум
+ * Система управления камерой мышью и касаниями
+ * Отвечает за панорамирование и зум на десктопе и мобильных устройствах
  */
 export class Controls {
   constructor(canvas, cameraManager, onNodeClickCheck, onCameraUpdate) {
@@ -16,27 +16,29 @@ export class Controls {
     this.previousMousePosition = { x: 0, y: 0 };
     this.isEnabled = true;
     
+    // Для поддержки мультитач (pinch-to-zoom)
+    this.previousTouchDistance = 0;
+    this.touches = [];
+    
     this.setupEventListeners();
   }
 
   /**
-   * Настроить обработчики событий
+   * Настроить обработчики событий (мышь + touch для мобильных)
    */
   setupEventListeners() {
-    // Нажатие мыши
+    // События мыши (для десктопа)
     this.canvas.addEventListener('mousedown', this.handleMouseDown);
-    
-    // Движение мыши
     this.canvas.addEventListener('mousemove', this.handleMouseMove);
-    
-    // Отпускание мыши
     this.canvas.addEventListener('mouseup', this.handleMouseUp);
-    
-    // Выход мыши за пределы canvas
     this.canvas.addEventListener('mouseleave', this.handleMouseLeave);
-    
-    // Колесико мыши для зума
     this.canvas.addEventListener('wheel', this.handleWheel);
+    
+    // Touch события (для мобильных устройств)
+    this.canvas.addEventListener('touchstart', this.handleTouchStart, { passive: false });
+    this.canvas.addEventListener('touchmove', this.handleTouchMove, { passive: false });
+    this.canvas.addEventListener('touchend', this.handleTouchEnd);
+    this.canvas.addEventListener('touchcancel', this.handleTouchEnd);
   }
 
   /**
@@ -132,6 +134,122 @@ export class Controls {
   };
 
   /**
+   * Обработка начала касания (touch)
+   */
+  handleTouchStart = (event) => {
+    if (!this.isEnabled) return;
+    
+    event.preventDefault();
+    
+    this.touches = Array.from(event.touches);
+    
+    if (this.touches.length === 1) {
+      // Одно касание - панорамирование
+      const touch = this.touches[0];
+      
+      // Проверяем клик по узлу (аналогично мыши)
+      const mouseEvent = {
+        button: 0,
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      };
+      
+      if (this.onNodeClickCheck && this.onNodeClickCheck(mouseEvent)) {
+        return;
+      }
+      
+      this.isDragging = true;
+      this.previousMousePosition = {
+        x: touch.clientX,
+        y: touch.clientY
+      };
+    } else if (this.touches.length === 2) {
+      // Два касания - зум (pinch)
+      this.isDragging = false;
+      const touch1 = this.touches[0];
+      const touch2 = this.touches[1];
+      this.previousTouchDistance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      );
+    }
+  };
+
+  /**
+   * Обработка движения касания (touch)
+   */
+  handleTouchMove = (event) => {
+    if (!this.isEnabled) return;
+    
+    event.preventDefault();
+    
+    this.touches = Array.from(event.touches);
+    
+    if (this.touches.length === 1 && this.isDragging) {
+      // Одно касание - панорамирование
+      const touch = this.touches[0];
+      const deltaX = touch.clientX - this.previousMousePosition.x;
+      const deltaY = touch.clientY - this.previousMousePosition.y;
+      
+      const panSpeed = this.cameraManager.getPanSpeed(
+        this.canvas.clientWidth,
+        this.canvas.clientHeight
+      );
+      
+      const panDelta = new THREE.Vector3(
+        -deltaX * panSpeed.x,
+        0,
+        -deltaY * panSpeed.z
+      );
+      
+      this.cameraManager.panTarget(panDelta);
+      
+      if (this.onCameraUpdate) {
+        this.onCameraUpdate();
+      }
+      
+      this.previousMousePosition = {
+        x: touch.clientX,
+        y: touch.clientY
+      };
+    } else if (this.touches.length === 2) {
+      // Два касания - зум (pinch)
+      const touch1 = this.touches[0];
+      const touch2 = this.touches[1];
+      const distance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      );
+      
+      if (this.previousTouchDistance > 0) {
+        const delta = distance - this.previousTouchDistance;
+        
+        // Зум в зависимости от изменения расстояния между пальцами
+        if (delta > 5) {
+          this.cameraManager.zoomIn();
+        } else if (delta < -5) {
+          this.cameraManager.zoomOut();
+        }
+      }
+      
+      this.previousTouchDistance = distance;
+    }
+  };
+
+  /**
+   * Обработка окончания касания (touch)
+   */
+  handleTouchEnd = (event) => {
+    if (!this.isEnabled) return;
+    
+    this.isDragging = false;
+    this.previousTouchDistance = 0;
+    this.touches = [];
+  };
+
+  /**
    * Включить управление
    */
   enable() {
@@ -151,11 +269,18 @@ export class Controls {
    * Освободить ресурсы
    */
   dispose() {
+    // Удаляем события мыши
     this.canvas.removeEventListener('mousedown', this.handleMouseDown);
     this.canvas.removeEventListener('mousemove', this.handleMouseMove);
     this.canvas.removeEventListener('mouseup', this.handleMouseUp);
     this.canvas.removeEventListener('mouseleave', this.handleMouseLeave);
     this.canvas.removeEventListener('wheel', this.handleWheel);
+    
+    // Удаляем touch события
+    this.canvas.removeEventListener('touchstart', this.handleTouchStart);
+    this.canvas.removeEventListener('touchmove', this.handleTouchMove);
+    this.canvas.removeEventListener('touchend', this.handleTouchEnd);
+    this.canvas.removeEventListener('touchcancel', this.handleTouchEnd);
   }
 }
 

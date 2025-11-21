@@ -15,8 +15,8 @@ export const FIREFLY_ROTATION_SPEED = 1.0;        // Скорость враще
 export const FIREFLY_CORE_SIZE_MULTIPLIER = 0.3;  // Множитель размера ядра светлячка
 export const FIREFLY_GLOW_SCALE_MULTIPLIER = 4;   // Множитель масштаба свечения
 export const FIREFLY_OUTER_GLOW_SCALE_MULTIPLIER = 6; // Множитель масштаба внешнего свечения
-export const FIREFLY_GLOW_TEXTURE_SIZE = 256;     // Размер текстуры свечения
-export const FIREFLY_OUTER_GLOW_TEXTURE_SIZE = 512; // Размер текстуры внешнего свечения
+export const FIREFLY_GLOW_TEXTURE_SIZE = 128;     // Размер текстуры свечения (снижено с 256 для производительности)
+export const FIREFLY_OUTER_GLOW_TEXTURE_SIZE = 256; // Размер текстуры внешнего свечения (снижено с 512 для производительности)
 export const FIREFLY_EMISSIVE_COLOR = 0x00c8ff;   // Цвет свечения светлячка
 export const FIREFLY_EMISSIVE_INTENSITY = 5.0;    // Интенсивность свечения
 export const FIREFLY_OUTER_GLOW_OPACITY = 0.6;    // Прозрачность внешнего свечения
@@ -65,11 +65,11 @@ export const TEXT_STROKE_COLOR = '#000000';        // Цвет обводки т
 export const TEXT_STROKE_WIDTH = 2;                // Толщина обводки текста
 
 // ==================== Geometry константы ====================
-export const SPHERE_SEGMENTS = 32;                  // Количество сегментов сферы
-export const SPHERE_RINGS = 32;                    // Количество колец сферы
+export const SPHERE_SEGMENTS = 16;                  // Количество сегментов сферы (снижено с 32 для производительности)
+export const SPHERE_RINGS = 16;                    // Количество колец сферы (снижено с 32 для производительности)
 
 // ==================== Texture константы ====================
-export const TEXT_SCALE_FACTOR = 4;                // Множитель масштаба для текстовых текстур
+export const TEXT_SCALE_FACTOR = 2;                // Множитель масштаба для текстовых текстур (снижено с 4 для производительности)
 export const TEXT_PADDING = 20;                    // Отступ для текстовых текстур
 
 // Градиент свечения для светлячков

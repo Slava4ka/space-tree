@@ -1,6 +1,47 @@
+import '../styles.css';
 import * as THREE from 'three';
 import { TreeNode, mockData } from './mockData.js';
 import { debounce } from 'lodash';
+
+// Инициализация фонового видео для мобильных устройств
+function initBackgroundVideo() {
+    const video = document.querySelector('.video-background video');
+    if (video) {
+        // Пытаемся запустить видео
+        const playPromise = video.play();
+        
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                console.warn('Autoplay заблокирован на мобильном устройстве:', error);
+                // Fallback: скрываем видео, показываем градиентный фон
+                const videoContainer = document.querySelector('.video-background');
+                if (videoContainer) {
+                    videoContainer.style.background = 'linear-gradient(135deg, #000428 0%, #004e92 100%)';
+                    video.style.display = 'none';
+                }
+            });
+        }
+        
+        // Дополнительно пытаемся запустить при взаимодействии пользователя
+        const tryPlay = () => {
+            if (video.paused) {
+                video.play().catch(() => {});
+            }
+            document.removeEventListener('touchstart', tryPlay);
+            document.removeEventListener('click', tryPlay);
+        };
+        
+        document.addEventListener('touchstart', tryPlay, { once: true });
+        document.addEventListener('click', tryPlay, { once: true });
+    }
+}
+
+// Запускаем инициализацию видео после загрузки DOM
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBackgroundVideo);
+} else {
+    initBackgroundVideo();
+}
 import { SceneManager } from './core/SceneManager.js';
 import { CameraManager } from './core/CameraManager.js';
 import { RendererManager } from './core/RendererManager.js';
@@ -517,50 +558,109 @@ class RadialTreeVisualization {
         this.camera.updateProjectionMatrix();
     }
     
-    createTrees(depth) {
-            // Сбрасываем кэш при пересоздании деревьев
-            cachedTrees = null;
-
-            // Очищаем массив узлов перед созданием новых
-            this.nodeMeshes = [];
-            cachedDepth = null;
-
-            // Удаляем старые деревья
-            this.treeGroups.forEach(treeGroup => {
-                this.sceneManager.remove(treeGroup);
-                treeGroup.traverse((child) => {
-                    if (child.geometry) child.geometry.dispose();
-                    if (child.material) {
-                        if (Array.isArray(child.material)) {
-                            child.material.forEach(m => m.dispose());
-                        } else {
-                            child.material.dispose();
-                        }
+    /**
+     * Полная очистка сцены перед пересозданием
+     * Освобождает все Three.js ресурсы для предотвращения утечек памяти
+     */
+    disposeScene() {
+        // 1. Очистка узлов (nodeMeshes содержит дополнительные данные)
+        this.nodeMeshes.forEach(nodeData => {
+            // Текстовый спрайт
+            if (nodeData.textSprite) {
+                if (nodeData.textSprite.material) {
+                    if (nodeData.textSprite.material.map) {
+                        nodeData.textSprite.material.map.dispose();
                     }
-                });
-            });
-            this.treeGroups = [];
-
-            // Удаляем старые светлячки
-            this.fireflies.forEach(firefly => {
-                firefly.mesh.traverse((child) => {
-                    if (child.geometry) child.geometry.dispose();
-                    if (child.material) {
-                        if (Array.isArray(child.material)) {
-                            child.material.forEach(m => m.dispose());
-                        } else {
-                            child.material.dispose();
-                        }
-                    }
-                });
-            });
-            this.fireflies = [];
-            
-            // Обновляем ссылки в DetailModeSystem после очистки
-            if (this.detailModeSystem) {
-                this.detailModeSystem.treeGroups = this.treeGroups;
-                this.detailModeSystem.fireflies = this.fireflies;
+                    nodeData.textSprite.material.dispose();
+                }
             }
+            
+            // Основной меш
+            if (nodeData.mesh) {
+                if (nodeData.mesh.geometry) nodeData.mesh.geometry.dispose();
+                
+                // Dispose материалов и их текстур
+                if (nodeData.mesh.material) {
+                    if (Array.isArray(nodeData.mesh.material)) {
+                        nodeData.mesh.material.forEach(m => {
+                            if (m.map) m.map.dispose();
+                            m.dispose();
+                        });
+                    } else {
+                        if (nodeData.mesh.material.map) {
+                            nodeData.mesh.material.map.dispose();
+                        }
+                        nodeData.mesh.material.dispose();
+                    }
+                }
+                
+                // Dispose детей (edges)
+                nodeData.mesh.children.forEach(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                });
+            }
+            
+            // Оригинальные материалы (если есть)
+            if (nodeData.originalMaterial) {
+                nodeData.originalMaterial.dispose();
+            }
+            if (nodeData.highlightMaterial) {
+                nodeData.highlightMaterial.dispose();
+            }
+        });
+        
+        // 2. Очистка деревьев
+        this.treeGroups.forEach(treeGroup => {
+            treeGroup.traverse(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => {
+                            if (m.map) m.map.dispose();
+                            m.dispose();
+                        });
+                    } else {
+                        if (child.material.map) child.material.map.dispose();
+                        child.material.dispose();
+                    }
+                }
+            });
+            this.scene.remove(treeGroup);
+        });
+        
+        // 3. Очистка светлячков
+        // ВАЖНО: НЕ dispose текстуры светлячков - они кэшированы!
+        this.fireflies.forEach(firefly => {
+            firefly.mesh.traverse(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    // Dispose материала, но НЕ текстуры (она в кэше)
+                    child.material.dispose();
+                }
+            });
+            this.scene.remove(firefly.mesh);
+        });
+        
+        // 4. Очистка массивов
+        this.nodeMeshes = [];
+        this.treeGroups = [];
+        this.fireflies = [];
+        
+        // 5. Обновляем ссылки в DetailModeSystem
+        if (this.detailModeSystem) {
+            this.detailModeSystem.treeGroups = this.treeGroups;
+            this.detailModeSystem.fireflies = this.fireflies;
+        }
+    }
+    
+    createTrees(depth) {
+        // Вызываем полную очистку перед созданием новых деревьев
+        this.disposeScene();
+        
+        // Сбрасываем кэш при пересоздании деревьев
+        cachedTrees = null;
+        cachedDepth = null;
 
         // Создаем кэш детей для быстрой фильтрации
         const childrenCache = new Map();
@@ -995,6 +1095,33 @@ class RadialTreeVisualization {
     }
     
     setupLayoutControls() {
+        // Логика сворачивания/разворачивания панели настроек
+        const layoutControls = document.querySelector('.layout-controls');
+        const layoutToggle = document.querySelector('.layout-toggle');
+        
+        if (layoutToggle && layoutControls) {
+            // На мобильных сворачиваем панель по умолчанию
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            if (isMobile) {
+                layoutControls.classList.add('collapsed');
+                layoutToggle.textContent = '+';
+            }
+            
+            layoutToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                layoutControls.classList.toggle('collapsed');
+                layoutToggle.textContent = layoutControls.classList.contains('collapsed') ? '+' : '−';
+            });
+            
+            // Клик по всей панели в свернутом состоянии разворачивает её
+            layoutControls.addEventListener('click', () => {
+                if (layoutControls.classList.contains('collapsed')) {
+                    layoutControls.classList.remove('collapsed');
+                    layoutToggle.textContent = '−';
+                }
+            });
+        }
+        
         const spacingSlider = document.getElementById('spacing-factor');
         const spacingValue = document.getElementById('spacing-value');
         const marginSlider = document.getElementById('level-margin-factor');

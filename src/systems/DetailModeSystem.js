@@ -213,16 +213,57 @@ export class DetailModeSystem {
     const button = document.createElement('button');
     button.textContent = '×';
     button.className = 'zoom-btn detail-exit-btn';
-    button.style.position = 'absolute';
-    button.style.top = '20px';
-    button.style.right = '20px';
-    button.style.zIndex = '1000';
+    
+    // Определяем мобильное устройство
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // Устанавливаем стили с учетом типа устройства
+    button.style.position = 'fixed';
+    
+    // На мобильных - левый нижний угол, на десктопе - правый верхний
+    if (isMobile) {
+      button.style.bottom = '15px';
+      button.style.left = '15px';
+      button.style.top = 'auto';
+      button.style.right = 'auto';
+    } else {
+      button.style.top = '20px';
+      button.style.right = '20px';
+      button.style.bottom = 'auto';
+      button.style.left = 'auto';
+    }
+    
+    button.style.zIndex = '10000';
+    button.style.width = isMobile ? '55px' : '50px';
+    button.style.height = isMobile ? '55px' : '50px';
+    button.style.fontSize = isMobile ? '36px' : '32px';
     button.style.opacity = '0';
-    button.style.transition = 'opacity 0.3s ease-in-out';
+    button.style.transition = 'all 0.3s ease-in-out';
+    button.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.7)';
+    button.style.background = 'rgba(0, 0, 0, 0.85)';
+    button.style.border = '2px solid rgba(255, 255, 255, 0.3)';
+    button.style.display = 'flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
+    button.style.lineHeight = '1';
+    button.style.color = 'white';
 
     button.addEventListener('click', () => {
       this.exit();
     });
+    
+    // Улучшенный hover эффект для десктопа
+    if (!isMobile) {
+      button.addEventListener('mouseenter', () => {
+        button.style.background = 'rgba(255, 0, 0, 0.8)';
+        button.style.transform = 'scale(1.1)';
+      });
+      
+      button.addEventListener('mouseleave', () => {
+        button.style.background = 'rgba(0, 0, 0, 0.85)';
+        button.style.transform = 'scale(1)';
+      });
+    }
 
     document.body.appendChild(button);
     this.detailModeExitButton = button;

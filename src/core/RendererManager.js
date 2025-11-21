@@ -17,7 +17,9 @@ export class RendererManager {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1;
 
-    this.renderer.setPixelRatio(window.devicePixelRatio);
+    // Ограничиваем pixelRatio для производительности на мобильных устройствах
+    // На устройствах с высоким DPI (iPhone, iPad) это значительно снижает нагрузку
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.resize(window.innerWidth, window.innerHeight);
   }
 

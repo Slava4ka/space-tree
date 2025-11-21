@@ -1,17 +1,34 @@
 import * as THREE from 'three';
-import { GLOW_GRADIENT_COLORS } from './constants.js';
+import { 
+  GLOW_GRADIENT_COLORS,
+  TEXT_PADDING,
+  TEXT_SCALE_FACTOR,
+  TEXT_COLOR,
+  TEXT_STROKE_COLOR,
+  TEXT_STROKE_WIDTH
+} from './constants.js';
 
 /**
  * Генератор текстур
  * Отвечает за создание различных текстур для визуализации
  */
 export class TextureGenerator {
+  // Кэш текстур для оптимизации памяти (избегаем создания дубликатов)
+  static textureCache = new Map();
+
   /**
-   * Создать текстуру свечения для светлячков
+   * Создать текстуру свечения для светлячков (с кэшированием)
    * @param {number} size - Размер текстуры
    * @returns {THREE.CanvasTexture}
    */
   static createGlowTexture(size) {
+    const cacheKey = `glow_${size}`;
+    
+    // Проверяем кэш - если текстура уже создана, возвращаем её
+    if (this.textureCache.has(cacheKey)) {
+      return this.textureCache.get(cacheKey);
+    }
+    
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
@@ -32,7 +49,23 @@ export class TextureGenerator {
     
     const texture = new THREE.CanvasTexture(canvas);
     texture.needsUpdate = true;
+    
+    // Сохраняем в кэш для переиспользования
+    // ВАЖНО: не очищаем canvas, так как CanvasTexture держит ссылку на него
+    this.textureCache.set(cacheKey, texture);
+    
     return texture;
+  }
+
+  /**
+   * Очистить кэш текстур (вызывается при полном пересоздании сцены)
+   */
+  static clearCache() {
+    // Dispose всех закэшированных текстур
+    for (const texture of this.textureCache.values()) {
+      texture.dispose();
+    }
+    this.textureCache.clear();
   }
 
   /**
