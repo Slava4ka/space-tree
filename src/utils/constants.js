@@ -75,6 +75,7 @@ export const TEXT_PADDING = 20;                    // Отступ для тек
 // ==================== Text Size константы ====================
 export const ROOT_TEXT_SIZE = 84;                  // Размер шрифта текста корневых узлов
 export const NODE_TEXT_SIZE = 42;                  // Размер шрифта текста обычных узлов (уровни 1-3)
+export const MAX_WORDS_PER_LINE = 4;                // Максимальное количество слов в одной строке текста
 
 // Градиент свечения для светлячков
 export const GLOW_GRADIENT_COLORS = [

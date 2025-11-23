@@ -28,7 +28,8 @@ import {
     ROOT_RADIUS,
     NODE_RADIUS,
     ROOT_TEXT_SIZE,
-    NODE_TEXT_SIZE
+    NODE_TEXT_SIZE,
+    MAX_WORDS_PER_LINE
 } from './utils/constants.js';
 
 // Инициализация фонового видео
@@ -71,6 +72,7 @@ class RadialTreeVisualization {
         this.nodeRadius = NODE_RADIUS;
         this.rootTextSize = ROOT_TEXT_SIZE;
         this.nodeTextSize = NODE_TEXT_SIZE;
+        this.maxWordsPerLine = MAX_WORDS_PER_LINE;
         
         // Параметры светлячков
         this.fireflySize = FIREFLY_SIZE;
@@ -151,6 +153,7 @@ class RadialTreeVisualization {
             nodeRadius: this.nodeRadius,
             rootTextSize: this.rootTextSize,
             nodeTextSize: this.nodeTextSize,
+            maxWordsPerLine: this.maxWordsPerLine,
             onZoomChange: (newZoom) => {
                 this.currentZoom = newZoom;
                 this.updateCameraZoom();
@@ -232,6 +235,7 @@ class RadialTreeVisualization {
             nodeRadius: this.nodeRadius,
             rootTextSize: this.rootTextSize,
             nodeTextSize: this.nodeTextSize,
+            maxWordsPerLine: this.maxWordsPerLine,
             onNodeMeshesUpdate: (nodeMeshes) => {
                 this.nodeMeshes = nodeMeshes;
                 this.nodeInteraction.updateNodeMeshes(nodeMeshes);
@@ -329,6 +333,7 @@ class RadialTreeVisualization {
             nodeRadius: this.nodeRadius,
             rootTextSize: this.rootTextSize,
             nodeTextSize: this.nodeTextSize,
+            maxWordsPerLine: this.maxWordsPerLine,
             onSpacingFactorChange: (value) => {
                 this.spacingFactor = value;
                 this.treeRenderer.updateParams({ spacingFactor: value });
@@ -428,6 +433,13 @@ class RadialTreeVisualization {
                     if (this.isDetailMode) {
                         this.detailModeSystem.updateTextSizes(this.rootTextSize, this.nodeTextSize);
                     }
+                }
+            },
+            onMaxWordsPerLineChange: (value) => {
+                this.maxWordsPerLine = value;
+                this.treeRenderer.updateParams({ maxWordsPerLine: value });
+                if (this.detailModeSystem) {
+                    this.detailModeSystem.updateParams({ maxWordsPerLine: value });
                 }
             }
         });

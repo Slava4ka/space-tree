@@ -44,6 +44,7 @@ export class DetailModeSystem {
     this.nodeRadius = config.nodeRadius || NODE_RADIUS;
     this.rootTextSize = config.rootTextSize || ROOT_TEXT_SIZE;
     this.nodeTextSize = config.nodeTextSize || NODE_TEXT_SIZE;
+    this.maxWordsPerLine = config.maxWordsPerLine || 5;
     
     // Состояние
     this.isDetailMode = false;
@@ -1257,6 +1258,35 @@ export class DetailModeSystem {
   }
   
   /**
+   * Разбить текст на строки по максимальному количеству слов
+   * @param {string} text - Текст для разбиения
+   * @param {number} maxWordsPerLine - Максимальное количество слов в строке (0 или undefined = без ограничений)
+   * @returns {string[]} Массив строк
+   */
+  splitTextIntoLines(text, maxWordsPerLine) {
+    if (!text || !text.trim()) {
+      return [''];
+    }
+
+    // Если maxWordsPerLine = 0 или undefined, возвращаем весь текст одной строкой
+    if (!maxWordsPerLine || maxWordsPerLine <= 0) {
+      return [text.trim()];
+    }
+
+    // Разбиваем текст на слова по пробелам
+    const words = text.trim().split(/\s+/);
+    const lines = [];
+
+    // Группируем слова в строки по maxWordsPerLine
+    for (let i = 0; i < words.length; i += maxWordsPerLine) {
+      const line = words.slice(i, i + maxWordsPerLine).join(' ');
+      lines.push(line);
+    }
+
+    return lines;
+  }
+
+  /**
    * Обновить размер текста в режиме детализации
    */
   updateTextSizes(rootTextSize, nodeTextSize) {
@@ -1279,6 +1309,7 @@ export class DetailModeSystem {
     const node = nodeData.node;
     const isRoot = node.level === 0;
     const fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+    const lineHeight = fontSize * 1.2; // Межстрочный интервал
 
     // Создаем новую текстуру
     const canvas = document.createElement('canvas');
@@ -1286,10 +1317,24 @@ export class DetailModeSystem {
 
     context.font = `bold ${fontSize}px Arial`;
 
-    // Измеряем текст
-    const metrics = context.measureText(node.text);
-    const textWidth = metrics.width;
-    const textHeight = fontSize;
+    // Разбиваем текст на строки
+    const lines = this.splitTextIntoLines(node.text, this.maxWordsPerLine);
+
+    // Измеряем ширину каждой строки и находим максимальную
+    let maxTextWidth = 0;
+    const lineWidths = [];
+    lines.forEach(line => {
+      const metrics = context.measureText(line);
+      const width = metrics.width;
+      lineWidths.push(width);
+      if (width > maxTextWidth) {
+        maxTextWidth = width;
+      }
+    });
+
+    // Рассчитываем размеры canvas
+    const textWidth = maxTextWidth;
+    const textHeight = lines.length * lineHeight - (lineHeight - fontSize); // Высота с учетом межстрочного интервала
 
     // Увеличиваем разрешение canvas для четкости при масштабировании
     canvas.width = (textWidth + TEXT_PADDING) * TEXT_SCALE_FACTOR;
@@ -1304,11 +1349,18 @@ export class DetailModeSystem {
     context.lineWidth = TEXT_STROKE_WIDTH;
     context.font = `bold ${fontSize}px Arial`;
     context.textAlign = 'center';
-    context.textBaseline = 'middle';
+    context.textBaseline = 'top';
 
-    // Рисуем текст с обводкой
-    context.strokeText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
-    context.fillText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
+    // Рисуем каждую строку с правильным вертикальным смещением
+    const centerX = (textWidth + TEXT_PADDING) / 2;
+    const startY = TEXT_PADDING / 2;
+
+    lines.forEach((line, index) => {
+      const y = startY + index * lineHeight;
+      // Рисуем текст с обводкой
+      context.strokeText(line, centerX, y);
+      context.fillText(line, centerX, y);
+    });
 
     // Создаем текстуру из canvas
     const texture = new THREE.CanvasTexture(canvas);
@@ -1336,13 +1388,28 @@ export class DetailModeSystem {
   createTextSprite(node, isRoot, radius, fontSize) {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
+    const lineHeight = fontSize * 1.2; // Межстрочный интервал
 
     context.font = `bold ${fontSize}px Arial`;
 
-    // Измеряем текст
-    const metrics = context.measureText(node.text);
-    const textWidth = metrics.width;
-    const textHeight = fontSize;
+    // Разбиваем текст на строки
+    const lines = this.splitTextIntoLines(node.text, this.maxWordsPerLine);
+
+    // Измеряем ширину каждой строки и находим максимальную
+    let maxTextWidth = 0;
+    const lineWidths = [];
+    lines.forEach(line => {
+      const metrics = context.measureText(line);
+      const width = metrics.width;
+      lineWidths.push(width);
+      if (width > maxTextWidth) {
+        maxTextWidth = width;
+      }
+    });
+
+    // Рассчитываем размеры canvas
+    const textWidth = maxTextWidth;
+    const textHeight = lines.length * lineHeight - (lineHeight - fontSize); // Высота с учетом межстрочного интервала
 
     // Увеличиваем разрешение canvas для четкости при масштабировании
     canvas.width = (textWidth + TEXT_PADDING) * TEXT_SCALE_FACTOR;
@@ -1357,11 +1424,18 @@ export class DetailModeSystem {
     context.lineWidth = TEXT_STROKE_WIDTH;
     context.font = `bold ${fontSize}px Arial`;
     context.textAlign = 'center';
-    context.textBaseline = 'middle';
+    context.textBaseline = 'top';
 
-    // Рисуем текст с обводкой
-    context.strokeText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
-    context.fillText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
+    // Рисуем каждую строку с правильным вертикальным смещением
+    const centerX = (textWidth + TEXT_PADDING) / 2;
+    const startY = TEXT_PADDING / 2;
+
+    lines.forEach((line, index) => {
+      const y = startY + index * lineHeight;
+      // Рисуем текст с обводкой
+      context.strokeText(line, centerX, y);
+      context.fillText(line, centerX, y);
+    });
 
     // Создаем текстуру из canvas
     const texture = new THREE.CanvasTexture(canvas);
@@ -1392,6 +1466,13 @@ export class DetailModeSystem {
     if (params.nodeRadius !== undefined) this.nodeRadius = params.nodeRadius;
     if (params.rootTextSize !== undefined) this.rootTextSize = params.rootTextSize;
     if (params.nodeTextSize !== undefined) this.nodeTextSize = params.nodeTextSize;
+    if (params.maxWordsPerLine !== undefined) {
+      this.maxWordsPerLine = params.maxWordsPerLine;
+      // Обновляем текст в режиме детализации, если он активен
+      if (this.isDetailMode && this.detailModeNode && this.detailModeNode.textSprite) {
+        this.updateNodeTextSprite(this.detailModeNode);
+      }
+    }
   }
 }
 

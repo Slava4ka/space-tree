@@ -28,6 +28,7 @@ export class UIControlsManager {
         this.onNodeRadiusChange = options.onNodeRadiusChange || (() => {});
         this.onRootTextSizeChange = options.onRootTextSizeChange || (() => {});
         this.onNodeTextSizeChange = options.onNodeTextSizeChange || (() => {});
+        this.onMaxWordsPerLineChange = options.onMaxWordsPerLineChange || (() => {});
         
         // Параметры радиусов
         this.rootRadius = options.rootRadius || 225;
@@ -36,6 +37,7 @@ export class UIControlsManager {
         // Параметры размера текста
         this.rootTextSize = options.rootTextSize || 84;
         this.nodeTextSize = options.nodeTextSize || 42;
+        this.maxWordsPerLine = options.maxWordsPerLine || 5;
         
         // Параметры для передачи в callbacks
         this.spacingFactor = options.spacingFactor || 1.4;
@@ -199,6 +201,7 @@ export class UIControlsManager {
         this.setupDetailModeSizeSlider();
         this.setupNodeSizeSliders();
         this.setupTextSizeSliders();
+        this.setupMaxWordsPerLineSlider();
     }
 
     setupSpacingSlider() {
@@ -393,6 +396,21 @@ export class UIControlsManager {
         }
     }
 
+    setupMaxWordsPerLineSlider() {
+        const maxWordsPerLineSlider = document.getElementById('max-words-per-line');
+        const maxWordsPerLineValue = document.getElementById('max-words-per-line-value');
+        if (maxWordsPerLineSlider && maxWordsPerLineValue) {
+            maxWordsPerLineSlider.value = String(this.maxWordsPerLine);
+            maxWordsPerLineValue.textContent = String(this.maxWordsPerLine);
+            maxWordsPerLineSlider.addEventListener('input', debounce((event) => {
+                const value = parseInt(event.target.value, 10);
+                this.maxWordsPerLine = value;
+                maxWordsPerLineValue.textContent = String(value);
+                this.onMaxWordsPerLineChange(value);
+            }, 300));
+        }
+    }
+
     /**
      * Обновить параметры (для синхронизации с внешним состоянием)
      */
@@ -437,6 +455,15 @@ export class UIControlsManager {
             if (nodeTextSizeSlider && nodeTextSizeValue) {
                 nodeTextSizeSlider.value = String(this.nodeTextSize);
                 nodeTextSizeValue.textContent = String(this.nodeTextSize);
+            }
+        }
+        if (params.maxWordsPerLine !== undefined) {
+            this.maxWordsPerLine = params.maxWordsPerLine;
+            const maxWordsPerLineSlider = document.getElementById('max-words-per-line');
+            const maxWordsPerLineValue = document.getElementById('max-words-per-line-value');
+            if (maxWordsPerLineSlider && maxWordsPerLineValue) {
+                maxWordsPerLineSlider.value = String(this.maxWordsPerLine);
+                maxWordsPerLineValue.textContent = String(this.maxWordsPerLine);
             }
         }
     }
