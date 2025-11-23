@@ -4,6 +4,8 @@ import { TreeBuilder } from './TreeBuilder.js';
 import {
     ROOT_RADIUS,
     NODE_RADIUS,
+    ROOT_TEXT_SIZE,
+    NODE_TEXT_SIZE,
     DEFAULT_NODE_COLOR,
     ROOT_NODE_COLOR,
     LEVEL_1_COLOR,
@@ -39,6 +41,8 @@ export class TreeRenderer {
         this.fireflyRotationSpeed = options.fireflyRotationSpeed || 1;
         this.rootRadius = options.rootRadius || ROOT_RADIUS;
         this.nodeRadius = options.nodeRadius || NODE_RADIUS;
+        this.rootTextSize = options.rootTextSize || ROOT_TEXT_SIZE;
+        this.nodeTextSize = options.nodeTextSize || NODE_TEXT_SIZE;
         
         // Массивы для хранения объектов
         this.nodeMeshes = [];
@@ -398,6 +402,7 @@ export class TreeRenderer {
         
         const sphere = new THREE.Mesh(geometry, material);
         sphere.position.copy(node.position);
+        sphere.renderOrder = 100; // Узлы ниже текста
         treeGroup.add(sphere);
         
         // Сохраняем ссылку на узел в mesh для raycasting
@@ -418,6 +423,7 @@ export class TreeRenderer {
             transparent: true
         });
         const edgeLines = new THREE.LineSegments(edges, edgeMaterial);
+        edgeLines.renderOrder = 200; // Обводки выше узлов, но ниже текста
         sphere.add(edgeLines);
         
         // Создаем текст на узле
@@ -452,8 +458,8 @@ export class TreeRenderer {
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         
-        // Размер шрифта зависит от уровня
-        const fontSize = isRoot ? 84 : node.level === 1 ? 54 : node.level === 2 ? 42 : node.level === 3 ? 36 : 30;
+        // Размер шрифта зависит от уровня и настроек
+        const fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
         context.font = `bold ${fontSize}px Arial`;
         
         // Измеряем текст
@@ -603,6 +609,14 @@ export class TreeRenderer {
             this.nodeRadius = params.nodeRadius;
             this.treeBuilder.updateRadii(this.rootRadius, this.nodeRadius);
         }
+        if (params.rootTextSize !== undefined) {
+            this.rootTextSize = params.rootTextSize;
+            this.updateTextSizes();
+        }
+        if (params.nodeTextSize !== undefined) {
+            this.nodeTextSize = params.nodeTextSize;
+            this.updateTextSizes();
+        }
     }
 
     /**
@@ -614,6 +628,83 @@ export class TreeRenderer {
             treeGroups: this.treeGroups,
             fireflies: this.fireflies
         };
+    }
+
+    /**
+     * Обновить размер текста всех узлов
+     */
+    updateTextSizes() {
+        this.nodeMeshes.forEach(nodeData => {
+            if (nodeData.textSprite) {
+                this.updateNodeTextSprite(nodeData);
+            }
+        });
+    }
+
+    /**
+     * Обновить текст спрайт конкретного узла
+     */
+    updateNodeTextSprite(nodeData) {
+        const node = nodeData.node;
+        const isRoot = node.level === 0;
+        const radius = isRoot ? this.rootRadius : this.nodeRadius;
+
+        // Создаем новую текстуру
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+
+        // Размер шрифта зависит от уровня и настроек
+        const fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+        context.font = `bold ${fontSize}px Arial`;
+
+        // Измеряем текст
+        const metrics = context.measureText(node.text);
+        const textWidth = metrics.width;
+        const textHeight = fontSize;
+
+        // Увеличиваем разрешение canvas для четкости при масштабировании
+        canvas.width = (textWidth + TEXT_PADDING) * TEXT_SCALE_FACTOR;
+        canvas.height = (textHeight + TEXT_PADDING) * TEXT_SCALE_FACTOR;
+
+        // Масштабируем контекст
+        context.scale(TEXT_SCALE_FACTOR, TEXT_SCALE_FACTOR);
+
+        // Перерисовываем текст
+        context.fillStyle = TEXT_COLOR;
+        context.strokeStyle = TEXT_STROKE_COLOR;
+        context.lineWidth = TEXT_STROKE_WIDTH;
+        context.font = `bold ${fontSize}px Arial`;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+
+        // Рисуем текст с обводкой
+        context.strokeText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
+        context.fillText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
+
+        // Создаем текстуру из canvas
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+
+        // Обновляем существующий спрайт
+        if (nodeData.textSprite) {
+            // Освобождаем старую текстуру
+            if (nodeData.textSprite.material.map) {
+                nodeData.textSprite.material.map.dispose();
+            }
+
+            // Устанавливаем новую текстуру
+            nodeData.textSprite.material.map = texture;
+            nodeData.textSprite.material.needsUpdate = true;
+
+            // Рассчитываем новый масштаб
+            const newScale = (canvas.width / TEXT_SCALE_FACTOR) * 1.5;
+            const scaleRatio = newScale / (canvas.height / TEXT_SCALE_FACTOR * 1.5);
+
+            nodeData.textSprite.scale.set(newScale, canvas.height / TEXT_SCALE_FACTOR * 1.5, 1);
+
+            // Обновляем targetSpriteScale для анимаций
+            nodeData.targetSpriteScale = nodeData.textSprite.scale.clone();
+        }
     }
 
     /**

@@ -61,6 +61,10 @@ export class Firefly {
     const outerGlowSprite = new THREE.Sprite(outerGlowMaterial);
     outerGlowSprite.scale.set(this.size * FIREFLY_OUTER_GLOW_SCALE_MULTIPLIER, this.size * FIREFLY_OUTER_GLOW_SCALE_MULTIPLIER, 1);
     fireflyGroup.add(outerGlowSprite);
+
+    // Светлячки должны быть выше узлов и обводок, но ниже текста
+    fireflyGroup.renderOrder = 300;
+
     return fireflyGroup;
   }
 

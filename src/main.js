@@ -26,7 +26,9 @@ import {
     CAMERA_INITIAL_DISTANCE,
     CAMERA_FOV,
     ROOT_RADIUS,
-    NODE_RADIUS
+    NODE_RADIUS,
+    ROOT_TEXT_SIZE,
+    NODE_TEXT_SIZE
 } from './utils/constants.js';
 
 // Инициализация фонового видео
@@ -67,6 +69,8 @@ class RadialTreeVisualization {
         // Параметры размеров узлов (динамические)
         this.rootRadius = ROOT_RADIUS;
         this.nodeRadius = NODE_RADIUS;
+        this.rootTextSize = ROOT_TEXT_SIZE;
+        this.nodeTextSize = NODE_TEXT_SIZE;
         
         // Параметры светлячков
         this.fireflySize = FIREFLY_SIZE;
@@ -145,6 +149,8 @@ class RadialTreeVisualization {
             initialCameraDistance: this.initialCameraDistance,
             rootRadius: this.rootRadius,
             nodeRadius: this.nodeRadius,
+            rootTextSize: this.rootTextSize,
+            nodeTextSize: this.nodeTextSize,
             onZoomChange: (newZoom) => {
                 this.currentZoom = newZoom;
                 this.updateCameraZoom();
@@ -224,6 +230,8 @@ class RadialTreeVisualization {
             fireflyRotationSpeed: this.fireflyRotationSpeed,
             rootRadius: this.rootRadius,
             nodeRadius: this.nodeRadius,
+            rootTextSize: this.rootTextSize,
+            nodeTextSize: this.nodeTextSize,
             onNodeMeshesUpdate: (nodeMeshes) => {
                 this.nodeMeshes = nodeMeshes;
                 this.nodeInteraction.updateNodeMeshes(nodeMeshes);
@@ -319,6 +327,8 @@ class RadialTreeVisualization {
             detailModeSystem: this.detailModeSystem,
             rootRadius: this.rootRadius,
             nodeRadius: this.nodeRadius,
+            rootTextSize: this.rootTextSize,
+            nodeTextSize: this.nodeTextSize,
             onSpacingFactorChange: (value) => {
                 this.spacingFactor = value;
                 this.treeRenderer.updateParams({ spacingFactor: value });
@@ -399,6 +409,26 @@ class RadialTreeVisualization {
                     this.detailModeSystem.updateParams({ nodeRadius: value });
                 }
                 this.createTrees(3);
+            },
+            onRootTextSizeChange: (value) => {
+                this.rootTextSize = value;
+                this.treeRenderer.updateParams({ rootTextSize: value });
+                if (this.detailModeSystem) {
+                    this.detailModeSystem.updateParams({ rootTextSize: value });
+                    if (this.isDetailMode) {
+                        this.detailModeSystem.updateTextSizes(this.rootTextSize, this.nodeTextSize);
+                    }
+                }
+            },
+            onNodeTextSizeChange: (value) => {
+                this.nodeTextSize = value;
+                this.treeRenderer.updateParams({ nodeTextSize: value });
+                if (this.detailModeSystem) {
+                    this.detailModeSystem.updateParams({ nodeTextSize: value });
+                    if (this.isDetailMode) {
+                        this.detailModeSystem.updateTextSizes(this.rootTextSize, this.nodeTextSize);
+                    }
+                }
             }
         });
         

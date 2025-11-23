@@ -8,6 +8,8 @@ import { mockData } from '../mockData.js';
 import {
   ROOT_RADIUS,
   NODE_RADIUS,
+  ROOT_TEXT_SIZE,
+  NODE_TEXT_SIZE,
   TEXT_COLOR,
   TEXT_STROKE_COLOR,
   TEXT_STROKE_WIDTH,
@@ -40,6 +42,8 @@ export class DetailModeSystem {
     this.initialCameraDistance = config.initialCameraDistance || 1280.6;
     this.rootRadius = config.rootRadius || ROOT_RADIUS;
     this.nodeRadius = config.nodeRadius || NODE_RADIUS;
+    this.rootTextSize = config.rootTextSize || ROOT_TEXT_SIZE;
+    this.nodeTextSize = config.nodeTextSize || NODE_TEXT_SIZE;
     
     // Состояние
     this.isDetailMode = false;
@@ -82,19 +86,23 @@ export class DetailModeSystem {
         originalOpacity: treeGroup.children.length > 0 ? treeGroup.children[0].material.opacity : 1
       });
       
-      // Сохраняем исходные значения opacity и transparent для каждого объекта
+      // Сохраняем исходные значения opacity, transparent, depthTest и depthWrite для каждого объекта
       treeGroup.traverse((object) => {
         if (object.material) {
           if (Array.isArray(object.material)) {
             const states = object.material.map(mat => ({
               opacity: mat.opacity,
-              transparent: mat.transparent
+              transparent: mat.transparent,
+              depthTest: mat.depthTest,
+              depthWrite: mat.depthWrite
             }));
             this.detailModeOriginalObjectStates.set(object, { materials: states });
           } else {
             this.detailModeOriginalObjectStates.set(object, {
               opacity: object.material.opacity,
-              transparent: object.material.transparent
+              transparent: object.material.transparent,
+              depthTest: object.material.depthTest,
+              depthWrite: object.material.depthWrite
             });
           }
         }
@@ -102,7 +110,9 @@ export class DetailModeSystem {
         if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
           this.detailModeOriginalObjectStates.set(object, {
             opacity: object.material.opacity,
-            transparent: object.material.transparent
+            transparent: object.material.transparent,
+            depthTest: object.material.depthTest,
+            depthWrite: object.material.depthWrite
           });
         }
       });
@@ -309,6 +319,7 @@ export class DetailModeSystem {
       // ВАЖНО: Сначала явно показываем выбранный узел и все его дочерние элементы
       // Это нужно сделать ДО traverse, чтобы узел не был скрыт
       selectedMesh.visible = true;
+      selectedMesh.renderOrder = 100; // Убеждаемся, что renderOrder правильный
       if (selectedMesh.material) {
         if (Array.isArray(selectedMesh.material)) {
           selectedMesh.material.forEach(mat => {
@@ -320,10 +331,16 @@ export class DetailModeSystem {
           selectedMesh.material.transparent = false;
         }
       }
-      
+
       // Показываем все дочерние элементы выбранного узла
       selectedMesh.traverse((child) => {
         child.visible = true;
+        // Устанавливаем правильный renderOrder для дочерних элементов
+        if (child instanceof THREE.LineSegments) {
+          child.renderOrder = 200; // Обводки
+        } else if (child.userData && child.userData.fireflyInstance) {
+          child.renderOrder = 300; // Светлячки
+        }
         if (child.material) {
           if (Array.isArray(child.material)) {
             child.material.forEach(mat => {
@@ -336,26 +353,32 @@ export class DetailModeSystem {
           }
         }
       });
-      
+
       if (selectedTextSprite) {
         selectedTextSprite.visible = true;
+        selectedTextSprite.renderOrder = 999; // Убеждаемся, что renderOrder правильный для текста
         if (selectedTextSprite.material) {
           if (Array.isArray(selectedTextSprite.material)) {
             selectedTextSprite.material.forEach(mat => {
               mat.opacity = 1;
               mat.transparent = false;
+              mat.depthTest = false; // Отключаем depth test для текста в режиме детализации
+              mat.depthWrite = false;
             });
           } else {
             selectedTextSprite.material.opacity = 1;
             selectedTextSprite.material.transparent = false;
+            selectedTextSprite.material.depthTest = false; // Отключаем depth test для текста в режиме детализации
+            selectedTextSprite.material.depthWrite = false;
           }
         }
       }
-      
+
       // Показываем светлячки выбранного узла
       this.fireflies.forEach((firefly) => {
         if (firefly.mesh && firefly.nodeId === selectedNodeId) {
           firefly.mesh.visible = true;
+          firefly.mesh.renderOrder = 300; // Убеждаемся, что renderOrder правильный для светлячков
           firefly.mesh.traverse((child) => {
             if (child.material) {
               if (Array.isArray(child.material)) {
@@ -628,10 +651,12 @@ export class DetailModeSystem {
         });
       }
 
-      // Центрируем текст узла
+      // Центрируем текст узла - добавляем дополнительное расстояние пропорционально масштабу
       if (nodeData.textSprite) {
         const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * currentScale.x;
-        nodeData.textSprite.position.set(0, nodeRadius + 90, 0);
+        // Добавляем дополнительное расстояние, чтобы текст всегда был спереди от увеличенного узла
+        const extraDistance = Math.max(0, (currentScale.x - 1) * 100); // Увеличиваем коэффициент для надежности
+        nodeData.textSprite.position.set(0, nodeRadius + 90 + extraDistance, 0);
       }
 
       // Показываем оверлей затемнения
@@ -807,17 +832,23 @@ export class DetailModeSystem {
                     if (originalState.materials[index]) {
                       mat.opacity = originalState.materials[index].opacity;
                       mat.transparent = originalState.materials[index].transparent;
+                      mat.depthTest = originalState.materials[index].depthTest;
+                      mat.depthWrite = originalState.materials[index].depthWrite;
                     }
                   });
                 } else if (!Array.isArray(object.material)) {
                   object.material.opacity = originalState.opacity;
                   object.material.transparent = originalState.transparent;
+                  object.material.depthTest = originalState.depthTest;
+                  object.material.depthWrite = originalState.depthWrite;
                 }
               }
-              
+
               if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
                 object.material.opacity = originalState.opacity;
                 object.material.transparent = originalState.transparent;
+                object.material.depthTest = originalState.depthTest;
+                object.material.depthWrite = originalState.depthWrite;
               }
             }
           });
@@ -1226,11 +1257,141 @@ export class DetailModeSystem {
   }
   
   /**
+   * Обновить размер текста в режиме детализации
+   */
+  updateTextSizes(rootTextSize, nodeTextSize) {
+    if (!this.isDetailMode || !this.detailModeNode) return;
+
+    this.rootTextSize = rootTextSize;
+    this.nodeTextSize = nodeTextSize;
+
+    // Обновляем текст только для выбранного узла в режиме детализации
+    const nodeData = this.detailModeNode;
+    if (nodeData.textSprite) {
+      this.updateNodeTextSprite(nodeData);
+    }
+  }
+
+  /**
+   * Обновить текст спрайт для узла в режиме детализации
+   */
+  updateNodeTextSprite(nodeData) {
+    const node = nodeData.node;
+    const isRoot = node.level === 0;
+    const fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+
+    // Создаем новую текстуру
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    context.font = `bold ${fontSize}px Arial`;
+
+    // Измеряем текст
+    const metrics = context.measureText(node.text);
+    const textWidth = metrics.width;
+    const textHeight = fontSize;
+
+    // Увеличиваем разрешение canvas для четкости при масштабировании
+    canvas.width = (textWidth + TEXT_PADDING) * TEXT_SCALE_FACTOR;
+    canvas.height = (textHeight + TEXT_PADDING) * TEXT_SCALE_FACTOR;
+
+    // Масштабируем контекст
+    context.scale(TEXT_SCALE_FACTOR, TEXT_SCALE_FACTOR);
+
+    // Перерисовываем текст
+    context.fillStyle = TEXT_COLOR;
+    context.strokeStyle = TEXT_STROKE_COLOR;
+    context.lineWidth = TEXT_STROKE_WIDTH;
+    context.font = `bold ${fontSize}px Arial`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+
+    // Рисуем текст с обводкой
+    context.strokeText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
+    context.fillText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
+
+    // Создаем текстуру из canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    // Обновляем существующий спрайт
+    if (nodeData.textSprite) {
+      // Освобождаем старую текстуру
+      if (nodeData.textSprite.material.map) {
+        nodeData.textSprite.material.map.dispose();
+      }
+
+      // Устанавливаем новую текстуру
+      nodeData.textSprite.material.map = texture;
+      nodeData.textSprite.material.needsUpdate = true;
+
+      // Рассчитываем новый масштаб
+      nodeData.textSprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
+    }
+  }
+
+  /**
+   * Создать текст спрайт для режима детализации (вспомогательный метод)
+   */
+  createTextSprite(node, isRoot, radius, fontSize) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    context.font = `bold ${fontSize}px Arial`;
+
+    // Измеряем текст
+    const metrics = context.measureText(node.text);
+    const textWidth = metrics.width;
+    const textHeight = fontSize;
+
+    // Увеличиваем разрешение canvas для четкости при масштабировании
+    canvas.width = (textWidth + TEXT_PADDING) * TEXT_SCALE_FACTOR;
+    canvas.height = (textHeight + TEXT_PADDING) * TEXT_SCALE_FACTOR;
+
+    // Масштабируем контекст
+    context.scale(TEXT_SCALE_FACTOR, TEXT_SCALE_FACTOR);
+
+    // Перерисовываем текст
+    context.fillStyle = TEXT_COLOR;
+    context.strokeStyle = TEXT_STROKE_COLOR;
+    context.lineWidth = TEXT_STROKE_WIDTH;
+    context.font = `bold ${fontSize}px Arial`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+
+    // Рисуем текст с обводкой
+    context.strokeText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
+    context.fillText(node.text, (textWidth + TEXT_PADDING) / 2, (textHeight + TEXT_PADDING) / 2);
+
+    // Создаем текстуру из canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    // Создаем спрайт с текстом
+    const spriteMaterial = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      alphaTest: 0.1
+    });
+    const sprite = new THREE.Sprite(spriteMaterial);
+
+    // Позиционируем текст над сферой
+    sprite.position.copy(node.position);
+    sprite.position.y += radius + 90;
+    sprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
+    sprite.renderOrder = 999; // Текст всегда поверх всех элементов
+
+    return sprite;
+  }
+
+  /**
    * Обновить параметры
    */
   updateParams(params) {
     if (params.rootRadius !== undefined) this.rootRadius = params.rootRadius;
     if (params.nodeRadius !== undefined) this.nodeRadius = params.nodeRadius;
+    if (params.rootTextSize !== undefined) this.rootTextSize = params.rootTextSize;
+    if (params.nodeTextSize !== undefined) this.nodeTextSize = params.nodeTextSize;
   }
 }
 
