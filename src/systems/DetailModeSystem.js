@@ -1195,20 +1195,13 @@ export class DetailModeSystem {
    */
   disableZoomControls() {
     const zoomInBtn = document.getElementById('zoom-in');
-    const zoomOutBtn = document.getElementById('zoom-out');
-    const zoomResetBtn = document.getElementById('zoom-reset');
-    
+
     if (zoomInBtn) {
       zoomInBtn.style.opacity = '0.3';
       zoomInBtn.style.pointerEvents = 'none';
       zoomInBtn.disabled = true;
     }
     // zoom-out не блокируем - он используется для закрытия детального режима
-    if (zoomResetBtn) {
-      zoomResetBtn.style.opacity = '0.3';
-      zoomResetBtn.style.pointerEvents = 'none';
-      zoomResetBtn.disabled = true;
-    }
   }
 
   /**
@@ -1217,8 +1210,7 @@ export class DetailModeSystem {
   enableZoomControls() {
     const zoomInBtn = document.getElementById('zoom-in');
     const zoomOutBtn = document.getElementById('zoom-out');
-    const zoomResetBtn = document.getElementById('zoom-reset');
-    
+
     if (zoomInBtn) {
       zoomInBtn.style.opacity = '1';
       zoomInBtn.style.pointerEvents = 'auto';
@@ -1228,11 +1220,6 @@ export class DetailModeSystem {
       zoomOutBtn.style.opacity = '1';
       zoomOutBtn.style.pointerEvents = 'auto';
       zoomOutBtn.disabled = false;
-    }
-    if (zoomResetBtn) {
-      zoomResetBtn.style.opacity = '1';
-      zoomResetBtn.style.pointerEvents = 'auto';
-      zoomResetBtn.disabled = false;
     }
   }
 }

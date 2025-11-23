@@ -109,12 +109,6 @@ export class CameraManager {
     this.setZoom(this.currentZoom - this.zoomStep);
   }
 
-  /**
-   * Сбросить зум
-   */
-  resetZoom() {
-    this.setZoom(1);
-  }
 
   /**
    * Установить минимальный зум

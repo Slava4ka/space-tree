@@ -44,23 +44,16 @@ export class UIControlsManager {
     setupZoomControls() {
         const zoomInBtn = document.getElementById('zoom-in');
         const zoomOutBtn = document.getElementById('zoom-out');
-        const zoomResetBtn = document.getElementById('zoom-reset');
-        
+
         if (zoomInBtn) {
             zoomInBtn.addEventListener('click', () => {
                 if (!this.isDetailMode()) this.zoomIn();
             });
         }
-        
+
         if (zoomOutBtn) {
             zoomOutBtn.addEventListener('click', () => {
                 this.zoomOut();
-            });
-        }
-        
-        if (zoomResetBtn) {
-            zoomResetBtn.addEventListener('click', () => {
-                if (!this.isDetailMode()) this.resetZoom();
             });
         }
         
@@ -123,8 +116,7 @@ export class UIControlsManager {
     disableZoomControls() {
         const zoomInBtn = document.getElementById('zoom-in');
         const zoomOutBtn = document.getElementById('zoom-out');
-        const zoomResetBtn = document.getElementById('zoom-reset');
-        
+
         if (zoomInBtn) {
             zoomInBtn.style.opacity = '0.3';
             zoomInBtn.style.pointerEvents = 'none';
@@ -135,11 +127,6 @@ export class UIControlsManager {
             zoomOutBtn.style.pointerEvents = 'none';
             zoomOutBtn.disabled = true;
         }
-        if (zoomResetBtn) {
-            zoomResetBtn.style.opacity = '0.3';
-            zoomResetBtn.style.pointerEvents = 'none';
-            zoomResetBtn.disabled = true;
-        }
     }
 
     /**
@@ -148,8 +135,7 @@ export class UIControlsManager {
     enableZoomControls() {
         const zoomInBtn = document.getElementById('zoom-in');
         const zoomOutBtn = document.getElementById('zoom-out');
-        const zoomResetBtn = document.getElementById('zoom-reset');
-        
+
         if (zoomInBtn) {
             zoomInBtn.style.opacity = '1';
             zoomInBtn.style.pointerEvents = 'auto';
@@ -159,11 +145,6 @@ export class UIControlsManager {
             zoomOutBtn.style.opacity = '1';
             zoomOutBtn.style.pointerEvents = 'auto';
             zoomOutBtn.disabled = false;
-        }
-        if (zoomResetBtn) {
-            zoomResetBtn.style.opacity = '1';
-            zoomResetBtn.style.pointerEvents = 'auto';
-            zoomResetBtn.disabled = false;
         }
     }
 
