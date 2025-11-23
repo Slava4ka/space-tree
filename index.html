@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Радиальное дерево - Three.js</title>
-<script defer src="/space-tree/static/js/three.d9839c99.js"></script><script defer src="/space-tree/static/js/lodash.9a0aca82.js"></script><script defer src="/space-tree/static/js/index.7f5aa3b5.js"></script><link href="/space-tree/static/css/index.861a473a.css" rel="stylesheet"></head>
+<script defer src="/space-tree/static/js/three.d9839c99.js"></script><script defer src="/space-tree/static/js/lodash.9a0aca82.js"></script><script defer src="/space-tree/static/js/index.38aeb574.js"></script><link href="/space-tree/static/css/index.861a473a.css" rel="stylesheet"></head>
 <body>
     <div class="video-background">
         <video autoplay muted loop playsinline>
@@ -14,7 +14,6 @@
     
     <div class="zoom-controls">
         <button id="zoom-in" class="zoom-btn" title="Приблизить">+</button>
-        <button id="zoom-reset" class="zoom-btn" title="Сбросить зум">⊙</button>
         <button id="zoom-out" class="zoom-btn" title="Отдалить">−</button>
     </div>
     
@@ -32,11 +31,6 @@
             <label for="level-margin-factor">Радиальный зазор</label>
             <input type="range" id="level-margin-factor" min="0.0" max="2.0" step="0.1" value="0.6">
             <span id="level-margin-value">0.6</span>
-        </div>
-        <div class="layout-row">
-            <label for="level1-count">Задачи (уровень 1)</label>
-            <input type="range" id="level1-count" min="0" max="200" step="1" value="169">
-            <span id="level1-value">169</span>
         </div>
         <div class="layout-row">
             <label for="graph-rotation-x">Вращение по X</label>
@@ -59,9 +53,9 @@
             <span id="firefly-size-value">20</span>
         </div>
         <div class="layout-row">
-            <label for="firefly-radius">Радиус орбиты светлячков</label>
-            <input type="range" id="firefly-radius" min="50" max="500" step="10" value="200">
-            <span id="firefly-radius-value">200</span>
+            <label for="firefly-radius">Смещение орбиты светлячков</label>
+            <input type="range" id="firefly-radius" min="0" max="300" step="5" value="65">
+            <span id="firefly-radius-value">65</span>
         </div>
         <div class="layout-row">
             <label for="firefly-speed">Скорость вращения светлячков</label>
@@ -72,6 +66,31 @@
             <label for="detail-mode-size">Размер узла в режиме просмотра (%)</label>
             <input type="range" id="detail-mode-size" min="10" max="80" step="1" value="30">
             <span id="detail-mode-size-value">30</span>
+        </div>
+        <div class="layout-row">
+            <label for="root-radius">Размер корневых узлов</label>
+            <input type="range" id="root-radius" min="100" max="3000" step="10" value="225">
+            <span id="root-radius-value">225</span>
+        </div>
+        <div class="layout-row">
+            <label for="node-radius">Размер обычных узлов</label>
+            <input type="range" id="node-radius" min="10" max="3000" step="10" value="135">
+            <span id="node-radius-value">135</span>
+        </div>
+        <div class="layout-row">
+            <label for="root-text-size">Размер текста корневых узлов</label>
+            <input type="range" id="root-text-size" min="20" max="200" step="2" value="84">
+            <span id="root-text-size-value">84</span>
+        </div>
+        <div class="layout-row">
+            <label for="node-text-size">Размер текста обычных узлов</label>
+            <input type="range" id="node-text-size" min="10" max="150" step="2" value="42">
+            <span id="node-text-size-value">42</span>
+        </div>
+        <div class="layout-row">
+            <label for="max-words-per-line">Максимальное количество слов в строке</label>
+            <input type="range" id="max-words-per-line" min="1" max="8" step="1" value="4">
+            <span id="max-words-per-line-value">4</span>
         </div>
     </div>
     
