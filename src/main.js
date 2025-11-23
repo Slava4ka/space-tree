@@ -92,12 +92,10 @@ class RadialTreeVisualization {
         this.treeGroups = [];
         this.fireflies = [];
         
-        // TreeBuilder для вычисления maxNodesPerLevel
         this.treeBuilder = new TreeBuilder();
-        this.maxNodesPerLevel = this.treeBuilder.computeMaxNodesPerLevel(mockData, 3);
         this.levelLimits = {
-            1: this.maxNodesPerLevel[1] ?? 0,
-            2: 0,
+            1: Infinity, // Без ограничений для задач (уровень 1)
+            2: 0,        // Технологии (уровень 2) отключены
         };
         
         // Инициализация систем
@@ -287,8 +285,6 @@ class RadialTreeVisualization {
             selectedNode: this.selectedNode,
             spacingFactor: this.spacingFactor,
             levelMarginFactor: this.levelMarginFactor,
-            levelLimits: this.levelLimits,
-            maxNodesPerLevel: this.maxNodesPerLevel,
             graphRotation: this.graphRotation,
             fireflySize: this.fireflySize,
             fireflyOrbitRadius: this.fireflyOrbitRadius,
@@ -305,11 +301,6 @@ class RadialTreeVisualization {
             onLevelMarginFactorChange: (value) => {
                 this.levelMarginFactor = value;
                 this.treeRenderer.updateParams({ levelMarginFactor: value });
-                this.createTrees(3);
-            },
-            onLevelLimitsChange: (levelLimits) => {
-                this.levelLimits = levelLimits;
-                this.treeRenderer.updateParams({ levelLimits });
                 this.createTrees(3);
             },
             onGraphRotationChange: (graphRotation) => {

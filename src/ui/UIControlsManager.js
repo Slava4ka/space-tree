@@ -19,7 +19,6 @@ export class UIControlsManager {
         // Callbacks для обновления параметров
         this.onSpacingFactorChange = options.onSpacingFactorChange || (() => {});
         this.onLevelMarginFactorChange = options.onLevelMarginFactorChange || (() => {});
-        this.onLevelLimitsChange = options.onLevelLimitsChange || (() => {});
         this.onGraphRotationChange = options.onGraphRotationChange || (() => {});
         this.onFireflySizeChange = options.onFireflySizeChange || (() => {});
         this.onFireflyRadiusChange = options.onFireflyRadiusChange || (() => {});
@@ -29,8 +28,6 @@ export class UIControlsManager {
         // Параметры для передачи в callbacks
         this.spacingFactor = options.spacingFactor || 1.4;
         this.levelMarginFactor = options.levelMarginFactor || 0.6;
-        this.levelLimits = options.levelLimits || {};
-        this.maxNodesPerLevel = options.maxNodesPerLevel || {};
         this.graphRotation = options.graphRotation || { x: 0, y: 0, z: 15 };
         this.fireflySize = options.fireflySize || 20;
         this.fireflyOrbitRadius = options.fireflyOrbitRadius || 65;
@@ -204,7 +201,6 @@ export class UIControlsManager {
         // Слайдеры для layout параметров
         this.setupSpacingSlider();
         this.setupMarginSlider();
-        this.setupLevel1Slider();
         this.setupGraphRotationSliders();
         this.setupFireflySliders();
         this.setupDetailModeSizeSlider();
@@ -238,24 +234,6 @@ export class UIControlsManager {
         }
     }
 
-    setupLevel1Slider() {
-        const level1Slider = document.getElementById('level1-count');
-        const level1Value = document.getElementById('level1-value');
-        
-        if (this.maxNodesPerLevel && level1Slider && level1Value) {
-            const max1 = this.maxNodesPerLevel[1] ?? 0;
-            level1Slider.max = String(max1);
-            level1Slider.value = String(this.levelLimits[1] ?? max1);
-            level1Value.textContent = String(this.levelLimits[1] ?? max1);
-            
-            level1Slider.addEventListener('input', (event) => {
-                const value = parseInt(event.target.value, 10);
-                this.levelLimits[1] = value;
-                level1Value.textContent = String(value);
-                this.onLevelLimitsChange(this.levelLimits);
-            });
-        }
-    }
 
     setupGraphRotationSliders() {
         // Вращение по X
@@ -366,7 +344,6 @@ export class UIControlsManager {
     updateParams(params) {
         if (params.spacingFactor !== undefined) this.spacingFactor = params.spacingFactor;
         if (params.levelMarginFactor !== undefined) this.levelMarginFactor = params.levelMarginFactor;
-        if (params.levelLimits !== undefined) this.levelLimits = params.levelLimits;
         if (params.graphRotation !== undefined) this.graphRotation = params.graphRotation;
         if (params.fireflySize !== undefined) this.fireflySize = params.fireflySize;
         if (params.fireflyOrbitRadius !== undefined) this.fireflyOrbitRadius = params.fireflyOrbitRadius;
