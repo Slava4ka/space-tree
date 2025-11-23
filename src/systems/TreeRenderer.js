@@ -539,7 +539,9 @@ export class TreeRenderer {
                     nodeId: node.id,
                     nodePosition: node.position.clone(),
                     angle: angle,
-                    speed: randomSpeed * direction
+                    speed: randomSpeed * direction,
+                    orbitRadius: this.fireflyOrbitRadius,
+                    originalOrbitRadius: this.fireflyOrbitRadius
                 });
                 
                 // Добавляем светлячка в treeGroup

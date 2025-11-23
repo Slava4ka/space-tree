@@ -50,6 +50,7 @@ export class DetailModeSystem {
     this.detailModeOriginalZoom = null;
     this.originalCameraPosition = null;
     this.originalCameraTarget = null;
+    this.detailModeOriginalFireflyPositions = null;
   }
 
   /**
@@ -103,6 +104,18 @@ export class DetailModeSystem {
           });
         }
       });
+    });
+
+    // Сохраняем исходные позиции и радиусы орбит светлячков выбранного узла
+    this.detailModeOriginalFireflyPositions = new Map();
+    const selectedNodeId = nodeData.node.id;
+    this.fireflies.forEach((firefly) => {
+      if (firefly.mesh && firefly.nodeId === selectedNodeId && firefly.nodePosition) {
+        this.detailModeOriginalFireflyPositions.set(firefly, {
+          position: firefly.nodePosition.clone(),
+          orbitRadius: firefly.orbitRadius || firefly.originalOrbitRadius
+        });
+      }
     });
 
     // Блокируем элементы управления зумом
@@ -578,7 +591,29 @@ export class DetailModeSystem {
 
       // Центрируем узел в сцене
       const targetPosition = new THREE.Vector3(0, 0, 0);
+      const originalPosition = nodeData.originalPosition || new THREE.Vector3(0, 0, 0);
       nodeData.mesh.position.lerp(targetPosition, easedProgress);
+
+      // Вычисляем текущую позицию узла для обновления светлячков
+      const currentNodePosition = originalPosition.clone().lerp(targetPosition, easedProgress);
+
+      // Обновляем позиции и радиусы орбит светлячков выбранного узла синхронно с перемещением узла
+      const averageScale = (currentScale.x + currentScale.y + currentScale.z) / 3;
+      this.fireflies.forEach((firefly) => {
+        if (firefly.mesh && firefly.nodeId === selectedNodeId && firefly.nodePosition) {
+          const originalFireflyData = this.detailModeOriginalFireflyPositions.get(firefly);
+          if (originalFireflyData) {
+            // Вычисляем смещение узла от исходной позиции
+            const nodeOffset = currentNodePosition.clone().sub(originalPosition);
+            // Обновляем позицию светлячка: исходная позиция + смещение узла
+            firefly.nodePosition.copy(originalFireflyData.position.clone().add(nodeOffset));
+            // Обновляем радиус орбиты пропорционально масштабу узла
+            if (originalFireflyData.orbitRadius !== undefined) {
+              firefly.orbitRadius = originalFireflyData.orbitRadius * averageScale;
+            }
+          }
+        }
+      });
 
       // Центрируем текст узла
       if (nodeData.textSprite) {
@@ -809,7 +844,30 @@ export class DetailModeSystem {
 
       // Возвращаем позицию узла
       const originalPosition = nodeData.originalPosition;
+      const centerPosition = new THREE.Vector3(0, 0, 0);
       nodeData.mesh.position.lerp(originalPosition, easedProgress);
+
+      // Вычисляем текущую позицию узла для обновления светлячков
+      // В начале анимации узел в центре (0, 0, 0), в конце - в originalPosition
+      const currentNodePosition = centerPosition.clone().lerp(originalPosition, easedProgress);
+
+      // Обновляем позиции и радиусы орбит светлячков выбранного узла синхронно с возвратом узла
+      const selectedNodeId = nodeData.node.id;
+      const averageScale = (currentScale.x + currentScale.y + currentScale.z) / 3;
+      this.fireflies.forEach((firefly) => {
+        if (firefly.mesh && firefly.nodeId === selectedNodeId && firefly.nodePosition) {
+          const originalFireflyData = this.detailModeOriginalFireflyPositions.get(firefly);
+          if (originalFireflyData) {
+            // Вычисляем смещение узла от центра к исходной позиции
+            const nodePositionOffset = currentNodePosition.clone().sub(originalPosition);
+            firefly.nodePosition.copy(originalFireflyData.position.clone().add(nodePositionOffset));
+            // Обновляем радиус орбиты пропорционально масштабу узла (возвращаемся к исходному размеру)
+            if (originalFireflyData.orbitRadius !== undefined) {
+              firefly.orbitRadius = originalFireflyData.orbitRadius * averageScale;
+            }
+          }
+        }
+      });
 
       // Возвращаем позицию текста
       if (nodeData.textSprite) {
@@ -933,6 +991,7 @@ export class DetailModeSystem {
     
     this.detailModeOriginalStates = null;
     this.detailModeOriginalObjectStates.clear();
+    this.detailModeOriginalFireflyPositions = null;
 
     // Разблокируем элементы управления зумом
     this.enableZoomControls();

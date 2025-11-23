@@ -40,17 +40,17 @@ export class NodeAnimation {
             firefly.angle += firefly.speed * 0.01;
             
             // Вычисляем радиус орбиты (зависит от размера узла в детальном режиме)
-            let orbitRadius = this.fireflyOrbitRadius;
+            let orbitRadius = firefly.orbitRadius !== undefined ? firefly.orbitRadius : this.fireflyOrbitRadius;
             const isDetailModeFirefly = this.isDetailMode() && 
                 this.detailModeNode && 
                 firefly.nodeId === this.detailModeNode.node.id;
             
-            if (isDetailModeFirefly) {
+            if (isDetailModeFirefly && firefly.orbitRadius === undefined) {
                 // В детальном режиме радиус орбиты должен масштабироваться вместе с узлом
                 // Получаем текущий масштаб узла (используем среднее значение по осям)
                 const nodeScale = this.detailModeNode.mesh.scale;
                 const averageScale = (nodeScale.x + nodeScale.y + nodeScale.z) / 3;
-                // Применяем масштаб к радиусу орбиты
+                // Применяем масштаб к радиусу орбиты (fallback, если orbitRadius не установлен)
                 orbitRadius = this.fireflyOrbitRadius * averageScale;
             }
             
