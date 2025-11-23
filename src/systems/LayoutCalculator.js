@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ROOT_RADIUS, NODE_RADIUS } from '../utils/constants.js';
+import { ROOT_RADIUS, NODE_RADIUS } from '../utils/constants.js'; // Используются как значения по умолчанию
 
 /**
  * Калькулятор радиального layout для дерева
@@ -72,6 +72,8 @@ export class LayoutCalculator {
   static calculateMaxTreeRadius(root, nodes, config) {
     const spacingFactor = config?.spacingFactor ?? 1.4;
     const levelMarginFactor = config?.levelMarginFactor ?? 0.6;
+    const rootRadius = config?.rootRadius ?? ROOT_RADIUS;
+    const nodeRadius = config?.nodeRadius ?? NODE_RADIUS;
     
     // Временно назначаем углы для расчета
     LayoutCalculator.assignAngles(root);
@@ -82,9 +84,9 @@ export class LayoutCalculator {
     const radii = new Array(maxLevel + 1).fill(0);
     radii[0] = 0;
     
-    const nodeDiameter = 2 * NODE_RADIUS;
+    const nodeDiameter = 2 * nodeRadius;
     const targetChord = nodeDiameter * spacingFactor;
-    const baseLevelSeparation = ROOT_RADIUS + NODE_RADIUS;
+    const baseLevelSeparation = rootRadius + nodeRadius;
     
     for (let level = 1; level <= maxLevel; level += 1) {
       const levelNodes = levels.get(level) || [];
@@ -128,7 +130,7 @@ export class LayoutCalculator {
     
     // Возвращаем максимальный радиус дерева
     const maxLevelRadius = Math.max(...radii);
-    const maxRadius = Math.max(maxLevelRadius + NODE_RADIUS, ROOT_RADIUS);
+    const maxRadius = Math.max(maxLevelRadius + nodeRadius, rootRadius);
     return maxRadius * 1.1; // Добавляем 10% запас
   }
 
@@ -139,6 +141,8 @@ export class LayoutCalculator {
     const spacingFactor = config?.spacingFactor ?? 1.4;
     const levelMarginFactor = config?.levelMarginFactor ?? 0.6;
     const offset = config?.offset ?? new THREE.Vector3(0, 0, 0);
+    const rootRadius = config?.rootRadius ?? ROOT_RADIUS;
+    const nodeRadius = config?.nodeRadius ?? NODE_RADIUS;
     
     // 1. Углы для всех узлов
     LayoutCalculator.assignAngles(root);
@@ -150,9 +154,9 @@ export class LayoutCalculator {
     const radii = new Array(maxLevel + 1).fill(0);
     radii[0] = 0; // root в центре
     
-    const nodeDiameter = 2 * NODE_RADIUS;
+    const nodeDiameter = 2 * nodeRadius;
     const targetChord = nodeDiameter * spacingFactor;
-    const baseLevelSeparation = ROOT_RADIUS + NODE_RADIUS;
+    const baseLevelSeparation = rootRadius + nodeRadius;
     
     // 3. Считаем радиусы уровней
     for (let level = 1; level <= maxLevel; level += 1) {

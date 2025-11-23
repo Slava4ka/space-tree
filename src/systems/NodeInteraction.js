@@ -219,7 +219,7 @@ export class NodeInteraction {
      */
     pushAwayNeighborNodes(selectedNodeData) {
         // Получаем радиус увеличенного узла
-        const selectedRadius = selectedNodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS;
+        const selectedRadius = selectedNodeData.node.level === 0 ? this.rootRadius : this.nodeRadius;
         const selectedScaledRadius = selectedRadius * 2; // Увеличенный узел в 2 раза
         
         // Получаем мировую позицию выбранного узла
@@ -234,7 +234,7 @@ export class NodeInteraction {
             if (otherNodeData === selectedNodeData) return;
             
             // Получаем радиус другого узла
-            const otherRadius = otherNodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS;
+            const otherRadius = otherNodeData.node.level === 0 ? this.rootRadius : this.nodeRadius;
             
             // Получаем мировую позицию другого узла
             const otherWorldPos = new THREE.Vector3();
@@ -375,6 +375,14 @@ export class NodeInteraction {
         if (state.cameraTarget !== undefined) this.cameraTarget = state.cameraTarget;
         if (state.originalCameraPosition !== undefined) this.originalCameraPosition = state.originalCameraPosition;
         if (state.originalCameraTarget !== undefined) this.originalCameraTarget = state.originalCameraTarget;
+    }
+    
+    /**
+     * Обновить параметры
+     */
+    updateParams(params) {
+        if (params.rootRadius !== undefined) this.rootRadius = params.rootRadius;
+        if (params.nodeRadius !== undefined) this.nodeRadius = params.nodeRadius;
     }
 }
 

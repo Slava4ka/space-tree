@@ -18,6 +18,8 @@ export class NodeAnimation {
         this.updateCameraPosition = options.updateCameraPosition || (() => {});
         this.DETAIL_MODE_SCREEN_SIZE_PERCENT = options.DETAIL_MODE_SCREEN_SIZE_PERCENT || 22;
         this.initialCameraDistance = options.initialCameraDistance || 1280.6;
+        this.rootRadius = options.rootRadius || ROOT_RADIUS;
+        this.nodeRadius = options.nodeRadius || NODE_RADIUS;
     }
 
     /**
@@ -49,7 +51,7 @@ export class NodeAnimation {
                 firefly.nodeId === detailModeNode.node.id;
             
             // Определяем базовый радиус узла
-            let baseNodeRadius = nodeData ? (nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS) : NODE_RADIUS;
+            let baseNodeRadius = nodeData ? (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) : this.nodeRadius;
             
             // В детальном режиме умножаем базовый радиус на коэффициент масштаба узла
             if (isDetailModeFirefly && detailModeNode && nodeData) {
@@ -198,7 +200,7 @@ export class NodeAnimation {
                 
                 // Перемещаем спрайт текста вместе с узлом
                 if (nodeData.textSprite) {
-                    const nodeRadius = (nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS) * nodeData.mesh.scale.y;
+                    const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * nodeData.mesh.scale.y;
 
                     // Получаем мировую позицию узла
                     const worldPos = new THREE.Vector3();
@@ -229,7 +231,7 @@ export class NodeAnimation {
                     // Достигли целевой позиции
                     nodeData.mesh.position.copy(nodeData.targetPushPosition);
                     if (nodeData.textSprite) {
-                        const nodeRadius = (nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS) * nodeData.mesh.scale.y;
+                        const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * nodeData.mesh.scale.y;
                         nodeData.textSprite.position.set(
                             nodeData.mesh.position.x,
                             nodeData.mesh.position.y + nodeRadius + 90,
@@ -255,7 +257,7 @@ export class NodeAnimation {
     updateTextSprites() {
         this.nodeMeshes.forEach(nodeData => {
             if (nodeData.textSprite && nodeData.mesh && !nodeData.isPushing) {
-                const nodeRadius = (nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS) * nodeData.mesh.scale.y;
+                const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * nodeData.mesh.scale.y;
                 // Обновляем позицию спрайта, чтобы она точно соответствовала позиции узла
                 nodeData.textSprite.position.set(
                     nodeData.mesh.position.x,
@@ -284,7 +286,7 @@ export class NodeAnimation {
      * Вычисление масштаба узла на основе процента ширины экрана (аналогично DetailModeSystem)
      */
     calculateScale(nodeData) {        
-        const nodeRadius = nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS;
+        const nodeRadius = nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius;
         const nodeDiameter = nodeRadius * 2;
 
         const fov = this.camera.fov * (Math.PI / 180);
@@ -305,5 +307,7 @@ export class NodeAnimation {
         if (params.animationSpeed !== undefined) this.animationSpeed = params.animationSpeed;
         if (params.fireflyOrbitRadius !== undefined) this.fireflyOrbitRadius = params.fireflyOrbitRadius;
         if (params.DETAIL_MODE_SCREEN_SIZE_PERCENT !== undefined) this.DETAIL_MODE_SCREEN_SIZE_PERCENT = params.DETAIL_MODE_SCREEN_SIZE_PERCENT;
+        if (params.rootRadius !== undefined) this.rootRadius = params.rootRadius;
+        if (params.nodeRadius !== undefined) this.nodeRadius = params.nodeRadius;
     }
 }

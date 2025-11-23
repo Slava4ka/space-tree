@@ -24,6 +24,12 @@ export class UIControlsManager {
         this.onFireflyRadiusChange = options.onFireflyRadiusChange || (() => {});
         this.onFireflySpeedChange = options.onFireflySpeedChange || (() => {});
         this.onDetailModeSizeChange = options.onDetailModeSizeChange || (() => {});
+        this.onRootRadiusChange = options.onRootRadiusChange || (() => {});
+        this.onNodeRadiusChange = options.onNodeRadiusChange || (() => {});
+        
+        // Параметры радиусов
+        this.rootRadius = options.rootRadius || 225;
+        this.nodeRadius = options.nodeRadius || 135;
         
         // Параметры для передачи в callbacks
         this.spacingFactor = options.spacingFactor || 1.4;
@@ -185,6 +191,7 @@ export class UIControlsManager {
         this.setupGraphRotationSliders();
         this.setupFireflySliders();
         this.setupDetailModeSizeSlider();
+        this.setupNodeSizeSliders();
     }
 
     setupSpacingSlider() {
@@ -318,6 +325,36 @@ export class UIControlsManager {
             });
         }
     }
+    
+    setupNodeSizeSliders() {
+        // Слайдер для корневых узлов
+        const rootRadiusSlider = document.getElementById('root-radius');
+        const rootRadiusValue = document.getElementById('root-radius-value');
+        if (rootRadiusSlider && rootRadiusValue) {
+            rootRadiusSlider.value = String(this.rootRadius);
+            rootRadiusValue.textContent = String(this.rootRadius);
+            rootRadiusSlider.addEventListener('input', debounce((event) => {
+                const value = parseInt(event.target.value, 10);
+                this.rootRadius = value;
+                rootRadiusValue.textContent = String(value);
+                this.onRootRadiusChange(value);
+            }, 300));
+        }
+        
+        // Слайдер для обычных узлов
+        const nodeRadiusSlider = document.getElementById('node-radius');
+        const nodeRadiusValue = document.getElementById('node-radius-value');
+        if (nodeRadiusSlider && nodeRadiusValue) {
+            nodeRadiusSlider.value = String(this.nodeRadius);
+            nodeRadiusValue.textContent = String(this.nodeRadius);
+            nodeRadiusSlider.addEventListener('input', debounce((event) => {
+                const value = parseInt(event.target.value, 10);
+                this.nodeRadius = value;
+                nodeRadiusValue.textContent = String(value);
+                this.onNodeRadiusChange(value);
+            }, 300));
+        }
+    }
 
     /**
      * Обновить параметры (для синхронизации с внешним состоянием)
@@ -329,6 +366,24 @@ export class UIControlsManager {
         if (params.fireflySize !== undefined) this.fireflySize = params.fireflySize;
         if (params.fireflyOrbitRadius !== undefined) this.fireflyOrbitRadius = params.fireflyOrbitRadius;
         if (params.fireflyRotationSpeed !== undefined) this.fireflyRotationSpeed = params.fireflyRotationSpeed;
+        if (params.rootRadius !== undefined) {
+            this.rootRadius = params.rootRadius;
+            const rootRadiusSlider = document.getElementById('root-radius');
+            const rootRadiusValue = document.getElementById('root-radius-value');
+            if (rootRadiusSlider && rootRadiusValue) {
+                rootRadiusSlider.value = String(this.rootRadius);
+                rootRadiusValue.textContent = String(this.rootRadius);
+            }
+        }
+        if (params.nodeRadius !== undefined) {
+            this.nodeRadius = params.nodeRadius;
+            const nodeRadiusSlider = document.getElementById('node-radius');
+            const nodeRadiusValue = document.getElementById('node-radius-value');
+            if (nodeRadiusSlider && nodeRadiusValue) {
+                nodeRadiusSlider.value = String(this.nodeRadius);
+                nodeRadiusValue.textContent = String(this.nodeRadius);
+            }
+        }
     }
 }
 

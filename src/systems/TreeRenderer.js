@@ -37,6 +37,8 @@ export class TreeRenderer {
         this.fireflySize = options.fireflySize || 20;
         this.fireflyOrbitRadius = options.fireflyOrbitRadius || 200;
         this.fireflyRotationSpeed = options.fireflyRotationSpeed || 1;
+        this.rootRadius = options.rootRadius || ROOT_RADIUS;
+        this.nodeRadius = options.nodeRadius || NODE_RADIUS;
         
         // Массивы для хранения объектов
         this.nodeMeshes = [];
@@ -47,7 +49,7 @@ export class TreeRenderer {
         this.sceneBounds = null;
         
         // TreeBuilder для построения деревьев
-        this.treeBuilder = new TreeBuilder();
+        this.treeBuilder = new TreeBuilder(this.rootRadius, this.nodeRadius);
         
         // Callbacks для обновления ссылок
         this.onNodeMeshesUpdate = options.onNodeMeshesUpdate || (() => {});
@@ -188,6 +190,8 @@ export class TreeRenderer {
             const radius = this.treeBuilder.calculateMaxTreeRadius(filteredRoot, filteredNodes, {
                 spacingFactor: this.spacingFactor,
                 levelMarginFactor: this.levelMarginFactor,
+                rootRadius: this.rootRadius,
+                nodeRadius: this.nodeRadius
             });
             return { root: filteredRoot, nodes: filteredNodes, radius };
         });
@@ -235,7 +239,7 @@ export class TreeRenderer {
         // Вычисляем оптимальное количество колонок (ближайший квадратный корень)
         const gridCols = Math.ceil(Math.sqrt(treeData.length));
         const gridRows = Math.ceil(treeData.length / gridCols);
-        const gap = ROOT_RADIUS; // Расстояние между краями деревьев
+        const gap = this.rootRadius; // Расстояние между краями деревьев
         
         // Вычисляем максимальные размеры для каждой колонки и строки
         const colWidths = new Array(gridCols).fill(0);
@@ -318,6 +322,8 @@ export class TreeRenderer {
             spacingFactor: this.spacingFactor,
             levelMarginFactor: this.levelMarginFactor,
             offset: offset,
+            rootRadius: this.rootRadius,
+            nodeRadius: this.nodeRadius
         });
         
         // Создаем группу для дерева
@@ -490,7 +496,7 @@ export class TreeRenderer {
         sprite.position.copy(node.position);
         sprite.position.y += radius + 90;
         sprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
-        sprite.renderOrder = 1; // Текст всегда поверх сфер
+        sprite.renderOrder = 999; // Текст всегда поверх всех элементов
         
         return sprite;
     }
@@ -508,8 +514,8 @@ export class TreeRenderer {
         const actualFireflyCount = Math.min(technologyCount, maxFirefliesPerTask);
 
         if (actualFireflyCount > 0) {
-            // Определяем радиус узла (ROOT_RADIUS для корневого узла, NODE_RADIUS для остальных)
-            const nodeRadius = node.level === 0 ? ROOT_RADIUS : NODE_RADIUS;
+            // Определяем радиус узла (rootRadius для корневого узла, nodeRadius для остальных)
+            const nodeRadius = node.level === 0 ? this.rootRadius : this.nodeRadius;
             // Вычисляем радиус орбиты: радиус узла + смещение из настройки
             const orbitRadius = nodeRadius + this.fireflyOrbitRadius;
             
@@ -589,6 +595,14 @@ export class TreeRenderer {
         if (params.fireflySize !== undefined) this.fireflySize = params.fireflySize;
         if (params.fireflyOrbitRadius !== undefined) this.fireflyOrbitRadius = params.fireflyOrbitRadius;
         if (params.fireflyRotationSpeed !== undefined) this.fireflyRotationSpeed = params.fireflyRotationSpeed;
+        if (params.rootRadius !== undefined) {
+            this.rootRadius = params.rootRadius;
+            this.treeBuilder.updateRadii(this.rootRadius, this.nodeRadius);
+        }
+        if (params.nodeRadius !== undefined) {
+            this.nodeRadius = params.nodeRadius;
+            this.treeBuilder.updateRadii(this.rootRadius, this.nodeRadius);
+        }
     }
 
     /**

@@ -24,7 +24,9 @@ import {
     DETAIL_MODE_ACTOR_RADIUS,
     ANIMATION_SPEED,
     CAMERA_INITIAL_DISTANCE,
-    CAMERA_FOV
+    CAMERA_FOV,
+    ROOT_RADIUS,
+    NODE_RADIUS
 } from './utils/constants.js';
 
 // Инициализация фонового видео
@@ -61,6 +63,10 @@ class RadialTreeVisualization {
         this.spacingFactor = 1.4;
         this.levelMarginFactor = 0.6;
         this.graphRotation = { x: 0, y: 0, z: 15 };
+        
+        // Параметры размеров узлов (динамические)
+        this.rootRadius = ROOT_RADIUS;
+        this.nodeRadius = NODE_RADIUS;
         
         // Параметры светлячков
         this.fireflySize = FIREFLY_SIZE;
@@ -137,6 +143,8 @@ class RadialTreeVisualization {
             DETAIL_MODE_ANIMATION_TIME: this.DETAIL_MODE_ANIMATION_TIME,
             DETAIL_MODE_ACTOR_RADIUS: this.DETAIL_MODE_ACTOR_RADIUS,
             initialCameraDistance: this.initialCameraDistance,
+            rootRadius: this.rootRadius,
+            nodeRadius: this.nodeRadius,
             onZoomChange: (newZoom) => {
                 this.currentZoom = newZoom;
                 this.updateCameraZoom();
@@ -168,6 +176,8 @@ class RadialTreeVisualization {
             originalCameraPosition: this.originalCameraPosition,
             originalCameraTarget: this.originalCameraTarget,
             detailModeSystem: this.detailModeSystem,
+            rootRadius: this.rootRadius,
+            nodeRadius: this.nodeRadius,
             onNodeSelect: (nodeData) => {
                 this.selectedNode = nodeData;
             },
@@ -194,7 +204,9 @@ class RadialTreeVisualization {
             cameraTarget: this.cameraTarget,
             updateCameraPosition: () => this.updateCameraPosition(),
             DETAIL_MODE_SCREEN_SIZE_PERCENT: this.DETAIL_MODE_SCREEN_SIZE_PERCENT,
-            initialCameraDistance: this.cameraManager.initialDistance
+            initialCameraDistance: this.cameraManager.initialDistance,
+            rootRadius: this.rootRadius,
+            nodeRadius: this.nodeRadius
         });
         
         // Инициализация TreeRenderer
@@ -210,6 +222,8 @@ class RadialTreeVisualization {
             fireflySize: this.fireflySize,
             fireflyOrbitRadius: this.fireflyOrbitRadius,
             fireflyRotationSpeed: this.fireflyRotationSpeed,
+            rootRadius: this.rootRadius,
+            nodeRadius: this.nodeRadius,
             onNodeMeshesUpdate: (nodeMeshes) => {
                 this.nodeMeshes = nodeMeshes;
                 this.nodeInteraction.updateNodeMeshes(nodeMeshes);
@@ -262,6 +276,16 @@ class RadialTreeVisualization {
         const visibleHeight = 2 * maxRadius * 1.2; // +20% запас
         const requiredDistance = visibleHeight / (2 * Math.tan(fovRad / 2));
         
+        // Вычисляем максимальное расстояние от камеры до дальних графов
+        // Учитываем позицию камеры (800, 1000) и размер сцены
+        const cameraDistance = this.cameraManager.getBaseDistance();
+        // Максимальное расстояние = расстояние от камеры до центра + радиус сцены
+        // Используем теорему Пифагора для учета диагонального расстояния
+        const maxSceneDistance = cameraDistance + maxRadius * 1.5; // Запас для диагональных графов
+        
+        // Обновляем дальнюю плоскость отсечения камеры
+        this.cameraManager.updateFarPlane(maxSceneDistance);
+        
         // Вычисляем минимальный зум
         const baseDistance = this.cameraManager.getBaseDistance();
         const minZoom = baseDistance / requiredDistance;
@@ -293,6 +317,8 @@ class RadialTreeVisualization {
             treeGroups: this.treeGroups,
             DETAIL_MODE_SCREEN_SIZE_PERCENT: this.DETAIL_MODE_SCREEN_SIZE_PERCENT,
             detailModeSystem: this.detailModeSystem,
+            rootRadius: this.rootRadius,
+            nodeRadius: this.nodeRadius,
             onSpacingFactorChange: (value) => {
                 this.spacingFactor = value;
                 this.treeRenderer.updateParams({ spacingFactor: value });
@@ -353,6 +379,26 @@ class RadialTreeVisualization {
                 if (this.isDetailMode && this.detailModeNode) {
                     this.detailModeSystem.setScreenSizePercent(value);
                 }
+            },
+            onRootRadiusChange: (value) => {
+                this.rootRadius = value;
+                this.treeRenderer.updateParams({ rootRadius: value });
+                this.nodeInteraction.updateParams({ rootRadius: value });
+                this.nodeAnimation.updateParams({ rootRadius: value });
+                if (this.detailModeSystem) {
+                    this.detailModeSystem.updateParams({ rootRadius: value });
+                }
+                this.createTrees(3);
+            },
+            onNodeRadiusChange: (value) => {
+                this.nodeRadius = value;
+                this.treeRenderer.updateParams({ nodeRadius: value });
+                this.nodeInteraction.updateParams({ nodeRadius: value });
+                this.nodeAnimation.updateParams({ nodeRadius: value });
+                if (this.detailModeSystem) {
+                    this.detailModeSystem.updateParams({ nodeRadius: value });
+                }
+                this.createTrees(3);
             }
         });
         

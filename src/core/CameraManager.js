@@ -34,10 +34,10 @@ export class CameraManager {
     this.cameraTarget = new THREE.Vector3(0, 0, 0);
     
     // Параметры зума
-    this.currentZoom = 1;
+    this.currentZoom = 0.5;
     this.minZoom = 0.2;
     this.maxZoom = 3;
-    this.zoomStep = 0.2;
+    this.zoomStepPercent = 0.15; // 15% от текущего зума для пропорционального шага
     
     // Устанавливаем начальную позицию
     this.updatePosition();
@@ -84,7 +84,10 @@ export class CameraManager {
    * Установить зум
    */
   setZoom(zoom) {
+console.trace()
+    console.log(zoom);
     this.currentZoom = THREE.MathUtils.clamp(zoom, this.minZoom, this.maxZoom);
+    console.log('Zoom:', this.currentZoom.toFixed(4), '(min:', this.minZoom.toFixed(4), ', max:', this.maxZoom.toFixed(4), ')');
     this.updatePosition();
   }
 
@@ -96,17 +99,31 @@ export class CameraManager {
   }
 
   /**
+   * Вычислить адаптивный шаг зума на основе текущего значения
+   * Использует процент от текущего зума для плавного изменения на любом уровне
+   */
+  getZoomStep() {
+    // Используем процент от текущего зума, но не меньше минимального абсолютного значения
+    const proportionalStep = this.currentZoom * this.zoomStepPercent;
+    // Минимальный шаг для очень маленьких значений зума
+    const minAbsoluteStep = 0.01;
+    return Math.max(proportionalStep, minAbsoluteStep);
+  }
+
+  /**
    * Увеличить зум
    */
   zoomIn() {
-    this.setZoom(this.currentZoom + this.zoomStep);
+    const step = this.getZoomStep();
+    this.setZoom(this.currentZoom + step);
   }
 
   /**
    * Уменьшить зум
    */
   zoomOut() {
-    this.setZoom(this.currentZoom - this.zoomStep);
+    const step = this.getZoomStep();
+    this.setZoom(this.currentZoom - step);
   }
 
 
@@ -115,10 +132,25 @@ export class CameraManager {
    * Используется для динамического расчета на основе размера сцены
    */
   setMinZoom(minZoom) {
-    this.minZoom = Math.max(0.05, minZoom); // Минимум 0.05 для безопасности
-    // Корректируем текущий зум, если он меньше нового минимального значения
-    if (this.currentZoom < this.minZoom) {
-      this.setZoom(this.minZoom);
+    console.log('setMinZoom');
+    
+    const previousMinZoom = this.minZoom;
+    // Убираем жесткое ограничение 0.05, чтобы позволить зум для очень больших сцен
+    // Устанавливаем минимальный предел только для предотвращения ошибок (очень маленькие значения)
+    const newMinZoom = Math.max(0.001, minZoom); // Минимум 0.001 для предотвращения ошибок
+    
+    this.minZoom = newMinZoom;
+    
+    // Если новый минимальный зум меньше предыдущего (сцена стала больше),
+    // автоматически устанавливаем текущий зум на новый минимальный,
+    // чтобы пользователь мог видеть всю сцену
+    if (newMinZoom < previousMinZoom) {
+      const step = this.getZoomStep();
+      this.setZoom(newMinZoom + step);
+    } else if (this.currentZoom < this.minZoom) {
+      // Корректируем текущий зум, если он меньше нового минимального значения
+      const step = this.getZoomStep();
+      this.setZoom(this.minZoom + step);
     }
   }
 
@@ -156,6 +188,18 @@ export class CameraManager {
       x: width / containerWidth,
       z: height / containerHeight,
     };
+  }
+
+  /**
+   * Обновить дальнюю плоскость отсечения камеры
+   * Используется для динамического обновления при изменении размера сцены
+   */
+  updateFarPlane(farDistance) {
+    // Добавляем запас 50% для безопасности
+    const safeFar = farDistance * 1.5;
+    // Устанавливаем минимум 100000 для больших сцен
+    this.camera.far = Math.max(safeFar, 100000);
+    this.camera.updateProjectionMatrix();
   }
 }
 

@@ -6,10 +6,12 @@ import { ROOT_RADIUS, NODE_RADIUS } from '../utils/constants.js';
  * Класс для построения и обработки деревьев из данных
  */
 export class TreeBuilder {
-    constructor() {
+    constructor(rootRadius = ROOT_RADIUS, nodeRadius = NODE_RADIUS) {
         // Кэш для деревьев (чтобы не пересчитывать каждый раз)
         this.cachedTrees = null;
         this.cachedDepth = null;
+        this.rootRadius = rootRadius;
+        this.nodeRadius = nodeRadius;
     }
 
     /**
@@ -140,7 +142,15 @@ export class TreeBuilder {
      * Получить радиус узла
      */
     getNodeRadius(node, isRoot = false) {
-        return isRoot ? ROOT_RADIUS : NODE_RADIUS;
+        return isRoot ? this.rootRadius : this.nodeRadius;
+    }
+    
+    /**
+     * Обновить радиусы узлов
+     */
+    updateRadii(rootRadius, nodeRadius) {
+        this.rootRadius = rootRadius;
+        this.nodeRadius = nodeRadius;
     }
 
     /**
@@ -208,7 +218,11 @@ export class TreeBuilder {
      * Возвращает максимальный радиус, который будет у дерева
      */
     calculateMaxTreeRadius(root, nodes, config) {
-        return LayoutCalculator.calculateMaxTreeRadius(root, nodes, config);
+        return LayoutCalculator.calculateMaxTreeRadius(root, nodes, {
+            ...config,
+            rootRadius: this.rootRadius,
+            nodeRadius: this.nodeRadius
+        });
     }
 
     /**
@@ -219,7 +233,11 @@ export class TreeBuilder {
      *  - offset: смещение центра дерева (для размещения нескольких деревьев)
      */
     calculatePositions(root, nodes, config) {
-        return LayoutCalculator.calculatePositions(root, nodes, config);
+        return LayoutCalculator.calculatePositions(root, nodes, {
+            ...config,
+            rootRadius: this.rootRadius,
+            nodeRadius: this.nodeRadius
+        });
     }
 
     /**

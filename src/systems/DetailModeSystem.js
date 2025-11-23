@@ -38,6 +38,8 @@ export class DetailModeSystem {
     this.DETAIL_MODE_ANIMATION_TIME = config.DETAIL_MODE_ANIMATION_TIME || 1.0;
     this.DETAIL_MODE_ACTOR_RADIUS = config.DETAIL_MODE_ACTOR_RADIUS || 400;
     this.initialCameraDistance = config.initialCameraDistance || 1280.6;
+    this.rootRadius = config.rootRadius || ROOT_RADIUS;
+    this.nodeRadius = config.nodeRadius || NODE_RADIUS;
     
     // Состояние
     this.isDetailMode = false;
@@ -628,7 +630,7 @@ export class DetailModeSystem {
 
       // Центрируем текст узла
       if (nodeData.textSprite) {
-        const nodeRadius = NODE_RADIUS * currentScale.x;
+        const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * currentScale.x;
         nodeData.textSprite.position.set(0, nodeRadius + 90, 0);
       }
 
@@ -882,7 +884,7 @@ export class DetailModeSystem {
 
       // Возвращаем позицию текста
       if (nodeData.textSprite) {
-        const nodeRadius = NODE_RADIUS * currentScale.x;
+        const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * currentScale.x;
         const textPos = new THREE.Vector3(
           originalPosition.x,
           originalPosition.y + nodeRadius + 90,
@@ -1168,7 +1170,7 @@ export class DetailModeSystem {
    * Вычисление масштаба узла на основе процента ширины экрана
    */
   calculateScale(nodeData) {
-    const nodeRadius = nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS;
+    const nodeRadius = nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius;
     const nodeDiameter = nodeRadius * 2;
 
     const fov = this.camera.fov * (Math.PI / 180);
@@ -1221,6 +1223,14 @@ export class DetailModeSystem {
       zoomOutBtn.style.pointerEvents = 'auto';
       zoomOutBtn.disabled = false;
     }
+  }
+  
+  /**
+   * Обновить параметры
+   */
+  updateParams(params) {
+    if (params.rootRadius !== undefined) this.rootRadius = params.rootRadius;
+    if (params.nodeRadius !== undefined) this.nodeRadius = params.nodeRadius;
   }
 }
 
