@@ -66,6 +66,13 @@ export class CameraManager {
   }
 
   /**
+   * Получить базовое расстояние камеры
+   */
+  getBaseDistance() {
+    return this.baseDistance;
+  }
+
+  /**
    * Сдвинуть цель камеры (панорамирование)
    */
   panTarget(delta) {
@@ -107,6 +114,18 @@ export class CameraManager {
    */
   resetZoom() {
     this.setZoom(1);
+  }
+
+  /**
+   * Установить минимальный зум
+   * Используется для динамического расчета на основе размера сцены
+   */
+  setMinZoom(minZoom) {
+    this.minZoom = Math.max(0.05, minZoom); // Минимум 0.05 для безопасности
+    // Корректируем текущий зум, если он меньше нового минимального значения
+    if (this.currentZoom < this.minZoom) {
+      this.setZoom(this.minZoom);
+    }
   }
 
   /**

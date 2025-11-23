@@ -23,7 +23,8 @@ import {
     DETAIL_MODE_ANIMATION_TIME,
     DETAIL_MODE_ACTOR_RADIUS,
     ANIMATION_SPEED,
-    CAMERA_INITIAL_DISTANCE
+    CAMERA_INITIAL_DISTANCE,
+    CAMERA_FOV
 } from './utils/constants.js';
 
 // Инициализация фонового видео
@@ -242,6 +243,31 @@ class RadialTreeVisualization {
         // Обновляем ссылки в системах
         this.nodeInteraction.updateNodeMeshes(this.nodeMeshes);
         this.nodeAnimation.updateReferences(this.nodeMeshes, this.fireflies, this.selectedNode);
+        
+        // Вычисляем и устанавливаем минимальный зум на основе размера сцены
+        this.calculateAndSetMinZoom();
+    }
+    
+    /**
+     * Вычисление минимального зума на основе размера сцены
+     */
+    calculateAndSetMinZoom() {
+        const sceneBounds = this.treeRenderer.getSceneBounds();
+        if (!sceneBounds) return;
+        
+        const maxRadius = sceneBounds.maxRadius;
+        
+        // Вычисляем требуемое расстояние для обзора всей сцены
+        const fovRad = (CAMERA_FOV * Math.PI) / 180;
+        const visibleHeight = 2 * maxRadius * 1.2; // +20% запас
+        const requiredDistance = visibleHeight / (2 * Math.tan(fovRad / 2));
+        
+        // Вычисляем минимальный зум
+        const baseDistance = this.cameraManager.getBaseDistance();
+        const minZoom = baseDistance / requiredDistance;
+        
+        // Устанавливаем минимальный зум
+        this.cameraManager.setMinZoom(minZoom);
     }
     
     setupUIControls() {

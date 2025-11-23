@@ -43,6 +43,9 @@ export class TreeRenderer {
         this.treeGroups = [];
         this.fireflies = [];
         
+        // Границы сцены (для расчета минимального зума)
+        this.sceneBounds = null;
+        
         // TreeBuilder для построения деревьев
         this.treeBuilder = new TreeBuilder();
         
@@ -190,7 +193,8 @@ export class TreeRenderer {
         });
         
         // Располагаем деревья в виде решетки (сетки)
-        const positions = this.calculateTreePositions(treeData);
+        const { positions, sceneBounds } = this.calculateTreePositions(treeData);
+        this.sceneBounds = sceneBounds;
         
         // Создаем визуальные элементы для каждого дерева
         treeData.forEach(({ root: filteredRoot, nodes: filteredNodes }, treeIndex) => {
@@ -215,6 +219,19 @@ export class TreeRenderer {
      * Вычисление позиций деревьев в сетке
      */
     calculateTreePositions(treeData) {
+        // Обработка пустого массива
+        if (!treeData || treeData.length === 0) {
+            return {
+                positions: [],
+                sceneBounds: {
+                    maxWidth: 0,
+                    maxHeight: 0,
+                    maxRadius: 0,
+                    maxTreeRadius: 0
+                }
+            };
+        }
+        
         // Вычисляем оптимальное количество колонок (ближайший квадратный корень)
         const gridCols = Math.ceil(Math.sqrt(treeData.length));
         const gridRows = Math.ceil(treeData.length / gridCols);
@@ -270,7 +287,26 @@ export class TreeRenderer {
             pos.z += offsetZ;
         });
         
-        return positions;
+        // Вычисляем максимальный радиус сцены (диагональ от центра до самого дальнего угла)
+        const maxWidth = totalWidth;
+        const maxHeight = totalHeight;
+        const maxRadius = Math.sqrt((maxWidth / 2) ** 2 + (maxHeight / 2) ** 2);
+        
+        // Находим максимальный радиус дерева для учета высоты
+        const maxTreeRadius = Math.max(...treeData.map(({ radius }) => radius), 0);
+        
+        // Итоговый максимальный радиус = радиус сетки + радиус самого большого дерева
+        const finalMaxRadius = maxRadius + maxTreeRadius;
+        
+        return {
+            positions,
+            sceneBounds: {
+                maxWidth,
+                maxHeight,
+                maxRadius: finalMaxRadius,
+                maxTreeRadius
+            }
+        };
     }
 
     /**
@@ -555,6 +591,13 @@ export class TreeRenderer {
             treeGroups: this.treeGroups,
             fireflies: this.fireflies
         };
+    }
+
+    /**
+     * Получить границы сцены (для расчета минимального зума)
+     */
+    getSceneBounds() {
+        return this.sceneBounds;
     }
 }
 
