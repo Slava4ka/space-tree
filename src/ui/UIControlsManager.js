@@ -57,7 +57,7 @@ export class UIControlsManager {
         
         if (zoomOutBtn) {
             zoomOutBtn.addEventListener('click', () => {
-                if (!this.isDetailMode()) this.zoomOut();
+                this.zoomOut();
             });
         }
         
@@ -96,8 +96,13 @@ export class UIControlsManager {
     }
     
     zoomOut() {
-        // В режиме детального просмотра зум заблокирован
-        if (this.isDetailMode()) return;
+        // В режиме детального просмотра кнопка zoom-out закрывает детальный режим
+        if (this.isDetailMode()) {
+            if (this.detailModeSystem) {
+                this.detailModeSystem.exit();
+            }
+            return;
+        }
         
         this.cameraManager.zoomOut();
         const newZoom = this.cameraManager.getZoom();

@@ -33,8 +33,58 @@ export class NodeInteraction {
      * Проверить клик по узлу (вызывается из Controls перед началом перетаскивания)
      */
     checkNodeClick(event) {
-        // В режиме детального просмотра блокируем все взаимодействия мыши
+        // В режиме детального просмотра
         if (this.isDetailMode()) {
+            // Проверяем, что клик не по UI элементам
+            const target = event.target;
+            if (target && typeof target.closest === 'function') {
+                const uiElement = target.closest('.detail-exit-btn') ||
+                                  target.closest('.zoom-controls') ||
+                                  target.closest('.layout-controls');
+                if (uiElement) {
+                    return true; // Блокируем перетаскивание, но не закрываем детальный режим
+                }
+            }
+
+            // Обрабатываем клик (мышь или touch)
+            // Проверяем наличие координат клика
+            if (event.clientX !== undefined && event.clientY !== undefined) {
+                // В детальном режиме закрываем его при клике на сцену (canvas)
+                // Проверяем клик по выбранному узлу через raycasting
+                this.mouse.x = (event.clientX / this.container.clientWidth) * 2 - 1;
+                this.mouse.y = -(event.clientY / this.container.clientHeight) * 2 + 1;
+
+                // Обновляем матрицы всех объектов перед raycasting
+                this.scene.updateMatrixWorld(true);
+
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+
+                // Проверяем пересечения только с выбранным узлом (он видим в детальном режиме)
+                if (this.detailModeSystem) {
+                    const currentNode = this.detailModeSystem.getCurrentNode();
+                    if (currentNode && currentNode.mesh) {
+                        const intersects = this.raycaster.intersectObject(currentNode.mesh, true);
+                        
+                        // Если клик по выбранному узлу - ничего не делаем
+                        if (intersects.length > 0) {
+                            return true; // Блокируем перетаскивание, но не закрываем детальный режим
+                        }
+                    }
+                }
+                
+                // Клик не по выбранному узлу (на сцену) - закрываем детальный режим
+                if (this.detailModeSystem) {
+                    this.detailModeSystem.exit();
+                }
+                if (event.preventDefault) {
+                    event.preventDefault();
+                }
+                if (event.stopPropagation) {
+                    event.stopPropagation();
+                }
+                return true; // Блокируем перетаскивание
+            }
+            
             return true; // Блокируем перетаскивание
         }
 

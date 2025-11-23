@@ -1098,6 +1098,7 @@ export class DetailModeSystem {
 
   /**
    * Блокировка элементов управления зумом
+   * zoom-out не блокируется, так как используется для закрытия детального режима
    */
   disableZoomControls() {
     const zoomInBtn = document.getElementById('zoom-in');
@@ -1109,11 +1110,7 @@ export class DetailModeSystem {
       zoomInBtn.style.pointerEvents = 'none';
       zoomInBtn.disabled = true;
     }
-    if (zoomOutBtn) {
-      zoomOutBtn.style.opacity = '0.3';
-      zoomOutBtn.style.pointerEvents = 'none';
-      zoomOutBtn.disabled = true;
-    }
+    // zoom-out не блокируем - он используется для закрытия детального режима
     if (zoomResetBtn) {
       zoomResetBtn.style.opacity = '0.3';
       zoomResetBtn.style.pointerEvents = 'none';

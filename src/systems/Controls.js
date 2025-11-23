@@ -45,15 +45,18 @@ export class Controls {
    * Обработка нажатия мыши
    */
   handleMouseDown = (event) => {
+    if (event.button === 0) { // Левая кнопка мыши
+      // Проверяем клик по узлу/закрытие детального режима (даже если controls отключены)
+      if (this.onNodeClickCheck && this.onNodeClickCheck(event)) {
+        // Клик обработан (по узлу или закрыт детальный режим) - не начинаем перетаскивание
+        return;
+      }
+    }
+    
+    // Если controls отключены - не обрабатываем дальше
     if (!this.isEnabled) return;
     
     if (event.button === 0) { // Левая кнопка мыши
-      // Проверяем, не кликнули ли по узлу (если есть callback)
-      if (this.onNodeClickCheck && this.onNodeClickCheck(event)) {
-        // Клик по узлу - не начинаем перетаскивание
-        return;
-      }
-      
       // Клик не по узлу - начинаем перетаскивание
       this.isDragging = true;
       this.previousMousePosition = {
@@ -137,8 +140,6 @@ export class Controls {
    * Обработка начала касания (touch)
    */
   handleTouchStart = (event) => {
-    if (!this.isEnabled) return;
-    
     event.preventDefault();
     
     this.touches = Array.from(event.touches);
@@ -147,11 +148,12 @@ export class Controls {
       // Одно касание - панорамирование
       const touch = this.touches[0];
       
-      // Проверяем клик по узлу (аналогично мыши)
+      // Проверяем клик по узлу/закрытие детального режима (даже если controls отключены)
       const mouseEvent = {
         button: 0,
         clientX: touch.clientX,
         clientY: touch.clientY,
+        target: event.target, // Передаем оригинальный target для проверки UI элементов
         preventDefault: () => {},
         stopPropagation: () => {}
       };
@@ -159,7 +161,14 @@ export class Controls {
       if (this.onNodeClickCheck && this.onNodeClickCheck(mouseEvent)) {
         return;
       }
-      
+    }
+    
+    // Если controls отключены - не обрабатываем дальше
+    if (!this.isEnabled) return;
+    
+    if (this.touches.length === 1) {
+      // Одно касание - начинаем перетаскивание
+      const touch = this.touches[0];
       this.isDragging = true;
       this.previousMousePosition = {
         x: touch.clientX,
