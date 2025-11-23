@@ -33,7 +33,7 @@ export class UIControlsManager {
         this.maxNodesPerLevel = options.maxNodesPerLevel || {};
         this.graphRotation = options.graphRotation || { x: 0, y: 0, z: 15 };
         this.fireflySize = options.fireflySize || 20;
-        this.fireflyOrbitRadius = options.fireflyOrbitRadius || 200;
+        this.fireflyOrbitRadius = options.fireflyOrbitRadius || 65;
         this.fireflyRotationSpeed = options.fireflyRotationSpeed || 1;
         this.fireflies = options.fireflies || [];
         this.treeGroups = options.treeGroups || [];

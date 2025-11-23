@@ -191,10 +191,12 @@ class RadialTreeVisualization {
             animationSpeed: this.animationSpeed,
             fireflyOrbitRadius: this.fireflyOrbitRadius,
             isDetailMode: () => this.isDetailMode,
-            detailModeNode: this.detailModeNode,
+            detailModeNode: () => this.detailModeNode,
             camera: this.camera,
             cameraTarget: this.cameraTarget,
-            updateCameraPosition: () => this.updateCameraPosition()
+            updateCameraPosition: () => this.updateCameraPosition(),
+            DETAIL_MODE_SCREEN_SIZE_PERCENT: this.DETAIL_MODE_SCREEN_SIZE_PERCENT,
+            initialCameraDistance: this.cameraManager.initialDistance
         });
         
         // Инициализация TreeRenderer
@@ -323,12 +325,29 @@ class RadialTreeVisualization {
             onFireflySizeChange: (value) => {
                 this.fireflySize = value;
                 this.treeRenderer.updateParams({ fireflySize: value });
-                // Обновление размера светлячков будет в TreeRenderer или отдельном методе
+                
+                // Обновляем размер всех существующих светлячков
+                this.fireflies.forEach(firefly => {
+                    if (firefly.mesh && firefly.mesh.userData && firefly.mesh.userData.fireflyInstance) {
+                        // Используем метод updateSize из экземпляра Firefly
+                        firefly.mesh.userData.fireflyInstance.updateSize(value);
+                    }
+                });
             },
             onFireflyRadiusChange: (value) => {
                 this.fireflyOrbitRadius = value;
                 this.treeRenderer.updateParams({ fireflyOrbitRadius: value });
                 this.nodeAnimation.updateParams({ fireflyOrbitRadius: value });
+                
+                // Обновляем смещение радиуса орбиты у всех существующих светлячков
+                this.fireflies.forEach(firefly => {
+                    firefly.orbitRadiusOffset = value;
+                });
+                
+                // Если мы в детальном режиме, обновляем сохраненные смещения
+                if (this.isDetailMode && this.detailModeSystem) {
+                    this.detailModeSystem.updateFireflyOrbitRadius(value);
+                }
             },
             onFireflySpeedChange: (value) => {
                 this.fireflyRotationSpeed = value;
@@ -339,6 +358,7 @@ class RadialTreeVisualization {
             },
             onDetailModeSizeChange: (value) => {
                 this.DETAIL_MODE_SCREEN_SIZE_PERCENT = value;
+                this.nodeAnimation.updateParams({ DETAIL_MODE_SCREEN_SIZE_PERCENT: value });
                 if (this.isDetailMode && this.detailModeNode) {
                     this.detailModeSystem.setScreenSizePercent(value);
                 }

@@ -12,10 +12,12 @@ export class NodeAnimation {
         this.animationSpeed = options.animationSpeed || 0.1;
         this.fireflyOrbitRadius = options.fireflyOrbitRadius || 200;
         this.isDetailMode = options.isDetailMode || (() => false);
-        this.detailModeNode = options.detailModeNode || null;
+        this.detailModeNode = options.detailModeNode || (() => null);
         this.camera = options.camera || null;
         this.cameraTarget = options.cameraTarget || new THREE.Vector3(0, 0, 0);
         this.updateCameraPosition = options.updateCameraPosition || (() => {});
+        this.DETAIL_MODE_SCREEN_SIZE_PERCENT = options.DETAIL_MODE_SCREEN_SIZE_PERCENT || 22;
+        this.initialCameraDistance = options.initialCameraDistance || 1280.6;
     }
 
     /**
@@ -39,38 +41,42 @@ export class NodeAnimation {
             // Обновляем угол с учетом скорости
             firefly.angle += firefly.speed * 0.01;
             
-            // Вычисляем радиус орбиты (зависит от размера узла в детальном режиме)
-            let orbitRadius = firefly.orbitRadius !== undefined ? firefly.orbitRadius : this.fireflyOrbitRadius;
+            // Находим узел для определения его радиуса
+            const nodeData = this.nodeMeshes.find(n => n.node.id === firefly.nodeId);
+            const detailModeNode = typeof this.detailModeNode === 'function' ? this.detailModeNode() : this.detailModeNode;
             const isDetailModeFirefly = this.isDetailMode() && 
-                this.detailModeNode && 
-                firefly.nodeId === this.detailModeNode.node.id;
+                detailModeNode && 
+                firefly.nodeId === detailModeNode.node.id;
             
-            if (isDetailModeFirefly && firefly.orbitRadius === undefined) {
-                // В детальном режиме радиус орбиты должен масштабироваться вместе с узлом
-                // Получаем текущий масштаб узла (используем среднее значение по осям)
-                const nodeScale = this.detailModeNode.mesh.scale;
-                const averageScale = (nodeScale.x + nodeScale.y + nodeScale.z) / 3;
-                // Применяем масштаб к радиусу орбиты (fallback, если orbitRadius не установлен)
-                orbitRadius = this.fireflyOrbitRadius * averageScale;
+            // Определяем базовый радиус узла
+            let baseNodeRadius = nodeData ? (nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS) : NODE_RADIUS;
+            
+            // В детальном режиме умножаем базовый радиус на коэффициент масштаба узла
+            if (isDetailModeFirefly && detailModeNode && nodeData) {
+                const scaleFactor = this.calculateScale(nodeData);
+                baseNodeRadius = baseNodeRadius * scaleFactor;
+                firefly.mesh.visible = true;
             }
             
-            // Вычисляем новую позицию на орбите в локальной системе координат treeGroup
-            // Орбита в горизонтальной плоскости XZ (локальная относительно узла)
+            // Вычисляем радиус орбиты: радиус узла + смещение из настройки
+            const offset = firefly.orbitRadiusOffset !== undefined ? firefly.orbitRadiusOffset : this.fireflyOrbitRadius;
+            const orbitRadius = baseNodeRadius + offset;
+            
+            // Вычисляем новую позицию на орбите
             const orbitX = Math.cos(firefly.angle) * orbitRadius;
-            const orbitY = 0; // На уровне узла
+            const orbitY = 0;
             const orbitZ = Math.sin(firefly.angle) * orbitRadius;
             
-            // В детальном режиме для светлячков выбранного узла используем текущую позицию узла (0, 0, 0)
-            let nodePosition = firefly.nodePosition;
+            // В детальном режиме узел в центре (0, 0, 0), в обычном - используем позицию узла
             if (isDetailModeFirefly) {
-                // В детальном режиме узел находится в центре (0, 0, 0)
-                nodePosition = new THREE.Vector3(0, 0, 0);
+                firefly.mesh.position.set(orbitX, orbitY, orbitZ);
+            } else {
+                firefly.mesh.position.set(
+                    firefly.nodePosition.x + orbitX,
+                    firefly.nodePosition.y + orbitY,
+                    firefly.nodePosition.z + orbitZ
+                );
             }
-            
-            // Позиция = позиция узла + смещение на орбите
-            firefly.mesh.position.x = nodePosition.x + orbitX;
-            firefly.mesh.position.y = nodePosition.y + orbitY;
-            firefly.mesh.position.z = nodePosition.z + orbitZ;
         });
     }
 
@@ -275,11 +281,29 @@ export class NodeAnimation {
     }
 
     /**
+     * Вычисление масштаба узла на основе процента ширины экрана (аналогично DetailModeSystem)
+     */
+    calculateScale(nodeData) {        
+        const nodeRadius = nodeData.node.level === 0 ? ROOT_RADIUS : NODE_RADIUS;
+        const nodeDiameter = nodeRadius * 2;
+
+        const fov = this.camera.fov * (Math.PI / 180);
+        const standardDistance = this.initialCameraDistance;
+        const visibleHeight = 2 * Math.tan(fov / 2) * standardDistance;
+        const visibleWidth = visibleHeight * this.camera.aspect;
+
+        const targetSize = visibleWidth * (this.DETAIL_MODE_SCREEN_SIZE_PERCENT / 100);
+        const scale = targetSize / nodeDiameter;
+
+        return scale * 1.2;
+    }
+
+    /**
      * Обновить параметры
      */
     updateParams(params) {
         if (params.animationSpeed !== undefined) this.animationSpeed = params.animationSpeed;
         if (params.fireflyOrbitRadius !== undefined) this.fireflyOrbitRadius = params.fireflyOrbitRadius;
+        if (params.DETAIL_MODE_SCREEN_SIZE_PERCENT !== undefined) this.DETAIL_MODE_SCREEN_SIZE_PERCENT = params.DETAIL_MODE_SCREEN_SIZE_PERCENT;
     }
 }
-

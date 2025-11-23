@@ -106,14 +106,14 @@ export class DetailModeSystem {
       });
     });
 
-    // Сохраняем исходные позиции и радиусы орбит светлячков выбранного узла
+    // Сохраняем исходные позиции и смещения радиусов орбит светлячков выбранного узла
     this.detailModeOriginalFireflyPositions = new Map();
     const selectedNodeId = nodeData.node.id;
     this.fireflies.forEach((firefly) => {
       if (firefly.mesh && firefly.nodeId === selectedNodeId && firefly.nodePosition) {
         this.detailModeOriginalFireflyPositions.set(firefly, {
           position: firefly.nodePosition.clone(),
-          orbitRadius: firefly.orbitRadius || firefly.originalOrbitRadius
+          orbitRadiusOffset: firefly.orbitRadiusOffset !== undefined ? firefly.orbitRadiusOffset : firefly.originalOrbitRadius
         });
       }
     });
@@ -545,37 +545,6 @@ export class DetailModeSystem {
         selectedTreeGroup.visible = true;
       }
       
-      // Убеждаемся, что светлячки выбранного узла остаются видимыми
-      this.fireflies.forEach((firefly) => {
-        if (firefly.mesh && firefly.nodeId === selectedNodeId) {
-          firefly.mesh.visible = true;
-          firefly.mesh.traverse((child) => {
-            if (child.material) {
-              if (Array.isArray(child.material)) {
-                child.material.forEach(mat => {
-                  mat.opacity = 1;
-                  mat.transparent = false;
-                });
-              } else {
-                child.material.opacity = 1;
-                child.material.transparent = false;
-              }
-            }
-          });
-        }
-      });
-
-      // Удаляем только светлячки, которые НЕ принадлежат выбранному узлу
-      if (progress === 0) {
-        this.fireflies.forEach((firefly) => {
-          if (firefly.mesh && firefly.mesh.parent) {
-            if (firefly.nodeId !== selectedNodeId) {
-              firefly.mesh.parent.remove(firefly.mesh);
-            }
-          }
-        });
-      }
-
       // Увеличиваем и центрируем выбранный узел
       const targetScaleValue = this.calculateScale(nodeData);
       const baseScale = nodeData.originalScale || new THREE.Vector3(1, 1, 1);
@@ -597,23 +566,65 @@ export class DetailModeSystem {
       // Вычисляем текущую позицию узла для обновления светлячков
       const currentNodePosition = originalPosition.clone().lerp(targetPosition, easedProgress);
 
-      // Обновляем позиции и радиусы орбит светлячков выбранного узла синхронно с перемещением узла
+      // Обновляем позиции и смещения радиусов орбит светлячков выбранного узла синхронно с перемещением узла
       const averageScale = (currentScale.x + currentScale.y + currentScale.z) / 3;
       this.fireflies.forEach((firefly) => {
-        if (firefly.mesh && firefly.nodeId === selectedNodeId && firefly.nodePosition) {
+        if (firefly.mesh && firefly.nodeId === selectedNodeId) {
           const originalFireflyData = this.detailModeOriginalFireflyPositions.get(firefly);
           if (originalFireflyData) {
-            // Вычисляем смещение узла от исходной позиции
-            const nodeOffset = currentNodePosition.clone().sub(originalPosition);
-            // Обновляем позицию светлячка: исходная позиция + смещение узла
-            firefly.nodePosition.copy(originalFireflyData.position.clone().add(nodeOffset));
-            // Обновляем радиус орбиты пропорционально масштабу узла
-            if (originalFireflyData.orbitRadius !== undefined) {
-              firefly.orbitRadius = originalFireflyData.orbitRadius * averageScale;
+            // В детальном режиме узел находится в центре (0, 0, 0)
+            // Поэтому nodePosition светлячка должен быть (0, 0, 0), а не обновляться на основе смещения узла
+            // Позиция светлячка будет вычисляться в NodeAnimation как (0, 0, 0) + orbitOffset
+            firefly.nodePosition = new THREE.Vector3(0, 0, 0);
+            
+            // Обновляем смещение радиуса орбиты (оно будет использоваться в NodeAnimation)
+            if (originalFireflyData.orbitRadiusOffset !== undefined) {
+              firefly.orbitRadiusOffset = originalFireflyData.orbitRadiusOffset;
             }
           }
         }
       });
+      
+      // Убеждаемся, что светлячки выбранного узла остаются видимыми (после обновления позиций)
+      this.fireflies.forEach((firefly) => {
+        if (firefly.mesh && firefly.nodeId === selectedNodeId) {
+          // Убеждаемся, что светлячок видим и находится в сцене
+          firefly.mesh.visible = true;
+          
+          // Если светлячок не имеет родителя, добавляем его в treeGroup
+          if (!firefly.mesh.parent && selectedTreeGroup) {
+            selectedTreeGroup.add(firefly.mesh);
+          }
+          
+          firefly.mesh.traverse((child) => {
+            child.visible = true;
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach(mat => {
+                  mat.opacity = 1;
+                  mat.transparent = false;
+                });
+              } else {
+                child.material.opacity = 1;
+                child.material.transparent = false;
+              }
+            }
+          });
+          
+        }
+      });
+      
+
+      // Удаляем только светлячки, которые НЕ принадлежат выбранному узлу
+      if (progress === 0) {
+        this.fireflies.forEach((firefly) => {
+          if (firefly.mesh && firefly.mesh.parent) {
+            if (firefly.nodeId !== selectedNodeId) {
+              firefly.mesh.parent.remove(firefly.mesh);
+            }
+          }
+        });
+      }
 
       // Центрируем текст узла
       if (nodeData.textSprite) {
@@ -851,7 +862,7 @@ export class DetailModeSystem {
       // В начале анимации узел в центре (0, 0, 0), в конце - в originalPosition
       const currentNodePosition = centerPosition.clone().lerp(originalPosition, easedProgress);
 
-      // Обновляем позиции и радиусы орбит светлячков выбранного узла синхронно с возвратом узла
+      // Обновляем позиции и смещения радиусов орбит светлячков выбранного узла синхронно с возвратом узла
       const selectedNodeId = nodeData.node.id;
       const averageScale = (currentScale.x + currentScale.y + currentScale.z) / 3;
       this.fireflies.forEach((firefly) => {
@@ -861,9 +872,9 @@ export class DetailModeSystem {
             // Вычисляем смещение узла от центра к исходной позиции
             const nodePositionOffset = currentNodePosition.clone().sub(originalPosition);
             firefly.nodePosition.copy(originalFireflyData.position.clone().add(nodePositionOffset));
-            // Обновляем радиус орбиты пропорционально масштабу узла (возвращаемся к исходному размеру)
-            if (originalFireflyData.orbitRadius !== undefined) {
-              firefly.orbitRadius = originalFireflyData.orbitRadius * averageScale;
+            // Обновляем смещение радиуса орбиты (оно будет использоваться в NodeAnimation)
+            if (originalFireflyData.orbitRadiusOffset !== undefined) {
+              firefly.orbitRadiusOffset = originalFireflyData.orbitRadiusOffset;
             }
           }
         }
@@ -1012,6 +1023,29 @@ export class DetailModeSystem {
     if (this.onStateChange) {
       this.onStateChange(false, null);
     }
+  }
+
+  /**
+   * Обновление сохраненных смещений радиусов орбит светлячков при изменении смещения
+   * Вызывается при изменении смещения радиуса орбиты в детальном режиме
+   */
+  updateFireflyOrbitRadius(newOffset) {
+    if (!this.isDetailMode || !this.detailModeNode || !this.detailModeOriginalFireflyPositions) {
+      return;
+    }
+
+    const selectedNodeId = this.detailModeNode.node.id;
+
+    // Обновляем сохраненные смещения для светлячков выбранного узла
+    this.fireflies.forEach((firefly) => {
+      if (firefly.mesh && firefly.nodeId === selectedNodeId) {
+        const originalFireflyData = this.detailModeOriginalFireflyPositions.get(firefly);
+        if (originalFireflyData) {
+          // Сохраняем новое смещение
+          originalFireflyData.orbitRadiusOffset = newOffset;
+        }
+      }
+    });
   }
 
   /**

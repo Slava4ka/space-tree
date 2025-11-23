@@ -10,7 +10,7 @@ export const H_STEP = 50;        // Вертикальный шаг (на буд
 
 // ==================== Firefly константы ====================
 export const FIREFLY_SIZE = 20;                    // Размер светлячков
-export const FIREFLY_ORBIT_RADIUS = 200;          // Радиус орбиты светлячков
+export const FIREFLY_ORBIT_RADIUS = 65;           // Смещение радиуса орбиты светлячков от радиуса узла (NODE_RADIUS + это значение)
 export const FIREFLY_ROTATION_SPEED = 1.0;        // Скорость вращения светлячков
 export const FIREFLY_CORE_SIZE_MULTIPLIER = 0.3;  // Множитель размера ядра светлячка
 export const FIREFLY_GLOW_SCALE_MULTIPLIER = 4;   // Множитель масштаба свечения

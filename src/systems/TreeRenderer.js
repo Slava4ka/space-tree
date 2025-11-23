@@ -508,6 +508,11 @@ export class TreeRenderer {
         const actualFireflyCount = Math.min(technologyCount, maxFirefliesPerTask);
 
         if (actualFireflyCount > 0) {
+            // Определяем радиус узла (ROOT_RADIUS для корневого узла, NODE_RADIUS для остальных)
+            const nodeRadius = node.level === 0 ? ROOT_RADIUS : NODE_RADIUS;
+            // Вычисляем радиус орбиты: радиус узла + смещение из настройки
+            const orbitRadius = nodeRadius + this.fireflyOrbitRadius;
+            
             for (let i = 0; i < actualFireflyCount; i++) {
                 // Случайный начальный угол
                 const baseAngle = (i / technologyCount) * Math.PI * 2;
@@ -523,8 +528,8 @@ export class TreeRenderer {
                 
                 // Создаем светлячка
                 const firefly = this.createFirefly(new THREE.Vector3(0, 0, 0), angle);
-                const orbitX = Math.cos(angle) * this.fireflyOrbitRadius;
-                const orbitZ = Math.sin(angle) * this.fireflyOrbitRadius;
+                const orbitX = Math.cos(angle) * orbitRadius;
+                const orbitZ = Math.sin(angle) * orbitRadius;
                 firefly.position.set(
                     node.position.x + orbitX,
                     node.position.y,
@@ -540,7 +545,7 @@ export class TreeRenderer {
                     nodePosition: node.position.clone(),
                     angle: angle,
                     speed: randomSpeed * direction,
-                    orbitRadius: this.fireflyOrbitRadius,
+                    orbitRadiusOffset: this.fireflyOrbitRadius, // Сохраняем смещение, а не абсолютный радиус
                     originalOrbitRadius: this.fireflyOrbitRadius
                 });
                 
@@ -557,6 +562,8 @@ export class TreeRenderer {
         const firefly = new Firefly(centerPosition, initialAngle, this.fireflySize);
         firefly.setOrbitRadius(this.fireflyOrbitRadius);
         firefly.setSpeed(this.fireflyRotationSpeed);
+        // Сохраняем ссылку на экземпляр Firefly в userData для возможности обновления размера
+        firefly.mesh.userData.fireflyInstance = firefly;
         return firefly.mesh;
     }
 
