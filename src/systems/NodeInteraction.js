@@ -90,8 +90,8 @@ export class NodeInteraction {
      * Выделение узла
      */
     selectNode(nodeData) {
-        // Для узлов уровня 1 (задачи) - вход в режим детального просмотра
-        if (nodeData.node.level === 1) {
+        // Для узлов уровня 0 (корневые) и уровня 1 (задачи) - вход в режим детального просмотра
+        if (nodeData.node.level === 0 || nodeData.node.level === 1) {
             this.enterDetailMode(nodeData);
             return;
         }
