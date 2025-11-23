@@ -85,9 +85,7 @@ export class CameraManager {
    */
   setZoom(zoom) {
 console.trace()
-    console.log(zoom);
     this.currentZoom = THREE.MathUtils.clamp(zoom, this.minZoom, this.maxZoom);
-    console.log('Zoom:', this.currentZoom.toFixed(4), '(min:', this.minZoom.toFixed(4), ', max:', this.maxZoom.toFixed(4), ')');
     this.updatePosition();
   }
 
@@ -131,9 +129,7 @@ console.trace()
    * Установить минимальный зум
    * Используется для динамического расчета на основе размера сцены
    */
-  setMinZoom(minZoom) {
-    console.log('setMinZoom');
-    
+  setMinZoom(minZoom) {    
     const previousMinZoom = this.minZoom;
     // Убираем жесткое ограничение 0.05, чтобы позволить зум для очень больших сцен
     // Устанавливаем минимальный предел только для предотвращения ошибок (очень маленькие значения)
