@@ -65,8 +65,14 @@ export class NodeInteraction {
                     if (currentNode && currentNode.mesh) {
                         const intersects = this.raycaster.intersectObject(currentNode.mesh, true);
                         
+                        // Фильтруем результаты, игнорируя оболочку и неоновое кольцо
+                        const validIntersects = intersects.filter(intersect => 
+                            !intersect.object.userData.isGlowShell &&
+                            !intersect.object.userData.isNeonRing
+                        );
+                        
                         // Если клик по выбранному узлу - ничего не делаем
-                        if (intersects.length > 0) {
+                        if (validIntersects.length > 0) {
                             return true; // Блокируем перетаскивание, но не закрываем детальный режим
                         }
                     }
@@ -103,12 +109,33 @@ export class NodeInteraction {
             const intersects = this.raycaster.intersectObjects(allMeshes, true);
 
             if (intersects.length > 0) {
-                // Клик по узлу - обрабатываем клик
-                const clickedMesh = intersects[0].object;
-                this.handleNodeClick(clickedMesh);
-                event.preventDefault();
-                event.stopPropagation();
-                return true; // Блокируем перетаскивание
+                // Находим первый пересекаемый объект, который не является оболочкой
+                let clickedMesh = null;
+                for (let i = 0; i < intersects.length; i++) {
+                    const obj = intersects[i].object;
+                    // Игнорируем оболочку, неоновое кольцо и другие вспомогательные элементы
+                    if (!obj.userData.isGlowShell && 
+                        !obj.userData.isNeonRing && 
+                        allMeshes.includes(obj)) {
+                        clickedMesh = obj;
+                        break;
+                    }
+                    // Если это child элемент, проверяем родителя
+                    if (obj.parent && 
+                        !obj.parent.userData.isGlowShell && 
+                        !obj.parent.userData.isNeonRing && 
+                        allMeshes.includes(obj.parent)) {
+                        clickedMesh = obj.parent;
+                        break;
+                    }
+                }
+                
+                if (clickedMesh) {
+                    this.handleNodeClick(clickedMesh);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return true; // Блокируем перетаскивание
+                }
             }
         }
         

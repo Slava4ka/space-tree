@@ -514,6 +514,9 @@ class RadialTreeVisualization {
     }
     
     update(deltaTime) {
+        // Обновляем вращение сфер и ориентацию колец к камере
+        this.treeRenderer.updateSphereRotations(deltaTime, this.camera);
+        
         // Обновляем анимации узлов
         this.nodeAnimation.update(deltaTime);
         

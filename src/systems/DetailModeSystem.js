@@ -58,6 +58,8 @@ export class DetailModeSystem {
     this.originalCameraPosition = null;
     this.originalCameraTarget = null;
     this.detailModeOriginalFireflyPositions = null;
+    this.neonRingRotationY = 0; // Текущий угол поворота кольца в детальном режиме
+    this.ringRays = null; // Лучи вокруг кольца для детального режима
   }
 
   /**
@@ -144,6 +146,9 @@ export class DetailModeSystem {
 
     // Создаем кнопку выхода
     this.createExitButton();
+
+    // Создаем лучи вокруг кольца
+    this.createRingRays(nodeData);
 
     // Анимируем вход в режим
     this.animateEnter(currentZoom, originalCameraPosition, originalCameraTarget);
@@ -300,6 +305,64 @@ export class DetailModeSystem {
   }
 
   /**
+   * Создание радиальных лучей вокруг кольца
+   */
+  createRingRays(nodeData) {
+    if (!nodeData.neonRing) return;
+
+    const ring = nodeData.neonRing;
+    const ringRadius = ring.geometry.parameters.radius;
+    const rayCount = 60; // Количество лучей
+    const rayInnerRadius = ringRadius * 1.02; // Начало луча (сразу за кольцом)
+    const rayOuterRadius = ringRadius * 1.6; // Конец луча
+    const rayOpacity = 0.6; // Увеличили яркость лучей
+
+    const rayGeometry = new THREE.BufferGeometry();
+    const positions = [];
+
+    // Создаем лучи
+    for (let i = 0; i < rayCount; i++) {
+      const angle = (i / rayCount) * Math.PI * 2;
+
+      // Чередуем короткие и длинные лучи для визуального разнообразия
+      const isLong = i % 3 === 0;
+      const outerRadius = isLong ? rayOuterRadius : rayOuterRadius * 0.7;
+
+      // Начальная точка луча (у кольца)
+      const x1 = Math.cos(angle) * rayInnerRadius;
+      const y1 = Math.sin(angle) * rayInnerRadius;
+      const z1 = 0;
+
+      // Конечная точка луча (снаружи)
+      const x2 = Math.cos(angle) * outerRadius;
+      const y2 = Math.sin(angle) * outerRadius;
+      const z2 = 0;
+
+      positions.push(x1, y1, z1, x2, y2, z2);
+    }
+
+    rayGeometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3)
+    );
+
+    const rayMaterial = new THREE.LineBasicMaterial({
+      color: 0xccffff, // Более яркий голубой/белый цвет
+      transparent: true,
+      opacity: 0, // Начинаем с 0 для анимации появления
+      linewidth: 1,
+    });
+
+    const rays = new THREE.LineSegments(rayGeometry, rayMaterial);
+    rays.position.copy(ring.position);
+    rays.userData.targetOpacity = rayOpacity;
+    rays.userData.isRingRays = true;
+
+    this.scene.add(rays);
+    this.ringRays = rays;
+  }
+
+  /**
    * Анимация входа в режим
    */
   animateEnter(currentZoom, originalCameraPosition, originalCameraTarget) {
@@ -374,7 +437,14 @@ export class DetailModeSystem {
           }
         }
       }
-
+      // Показываем неоновое кольцо выбранного узла
+      if (nodeData.neonRing) {
+          nodeData.neonRing.visible = true;
+          nodeData.neonRing.traverse((child) => {
+          child.visible = true;
+          });
+      }
+      
       // Показываем светлячки выбранного узла
       this.fireflies.forEach((firefly) => {
         if (firefly.mesh && firefly.nodeId === selectedNodeId) {
@@ -436,6 +506,16 @@ export class DetailModeSystem {
                 object.material.transparent = false;
               }
             }
+            return;
+          }
+          // Исключаем неоновое кольцо выбранного узла и его дочерние элементы
+          if (object === nodeData.neonRing || object.parent === nodeData.neonRing) {
+            object.visible = true;
+            return;
+          }
+          // Исключаем лучи вокруг кольца выбранного узла и его дочерние элементы
+          if (object === this.ringRays || object.parent === this.ringRays) {
+            object.visible = true;
             return;
           }
           
@@ -565,7 +645,15 @@ export class DetailModeSystem {
           }
         }
       });
-      
+
+      // Убеждаемся, что неоновое кольцо остается видимым
+      if (nodeData.neonRing) {
+        nodeData.neonRing.visible = true;
+        nodeData.neonRing.traverse((child) => {
+          child.visible = true;
+        });
+      }
+
       // ВАЖНО: Повторно устанавливаем видимость selectedTreeGroup после всех операций
       if (selectedTreeGroup) {
         selectedTreeGroup.visible = true;
@@ -653,6 +741,28 @@ export class DetailModeSystem {
       }
 
       // Центрируем текст узла - добавляем дополнительное расстояние пропорционально масштабу
+      // Центрируем и масштабируем неоновое кольцо вместе с узлом
+      if (nodeData.neonRing) {
+        nodeData.neonRing.position.lerp(targetPosition, easedProgress);
+        nodeData.neonRing.scale.copy(currentScale);
+        nodeData.neonRing.scale.multiplyScalar(1.05);
+        // Сохраняем угол поворота для применения в updateSphereRotations
+        this.neonRingRotationY = ((10 * Math.PI) / 180) * easedProgress;
+      }
+
+      // Обновляем лучи вокруг кольца
+      if (this.ringRays) {
+        this.ringRays.position.copy(targetPosition);
+        this.ringRays.scale.copy(currentScale);
+        this.ringRays.scale.multiplyScalar(1.05);
+        // Анимируем появление лучей
+        if (this.ringRays.material) {
+          this.ringRays.material.opacity =
+            this.ringRays.userData.targetOpacity * easedProgress;
+        }
+      }
+
+      // Центрируем текст узла
       if (nodeData.textSprite) {
         const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * currentScale.x;
         // Добавляем дополнительное расстояние, чтобы текст всегда был спереди от увеличенного узла
@@ -745,6 +855,13 @@ export class DetailModeSystem {
             return;
           }
           
+          // Исключаем неоновое кольцо выбранного узла и его дочерние элементы
+          if (
+            object === nodeData.neonRing ||
+            object.parent === nodeData.neonRing
+          ) {
+            return;
+          }
           // Проверяем, является ли объект дочерним элементом выбранного узла
           let isChildOfSelected = false;
           let parent = object.parent;
@@ -816,6 +933,14 @@ export class DetailModeSystem {
           selectedMesh.material.opacity = 1.0;
           selectedMesh.material.transparent = false;
         }
+      }
+
+      // Убеждаемся, что неоновое кольцо остается видимым
+      if (nodeData.neonRing) {
+        nodeData.neonRing.visible = true;
+        nodeData.neonRing.traverse((child) => {
+          child.visible = true;
+        });
       }
       
       // В конце анимации (когда progress = 1) восстанавливаем исходные значения
@@ -913,6 +1038,13 @@ export class DetailModeSystem {
           }
         }
       });
+      // Возвращаем позицию и масштаб неонового кольца вместе с узлом
+      if (nodeData.neonRing) {
+        nodeData.neonRing.position.lerp(originalPosition, easedProgress);
+        nodeData.neonRing.scale.copy(currentScale);
+        // Сохраняем угол поворота для применения в updateSphereRotations
+        this.neonRingRotationY = ((6 * Math.PI) / 180) * (1 - easedProgress);
+      }
 
       // Возвращаем позицию текста
       if (nodeData.textSprite) {
@@ -923,6 +1055,17 @@ export class DetailModeSystem {
           originalPosition.z
         );
         nodeData.textSprite.position.lerp(textPos, easedProgress);
+      }
+
+      // Обновляем и скрываем лучи
+      if (this.ringRays) {
+        this.ringRays.position.lerp(originalPosition, easedProgress);
+        this.ringRays.scale.copy(currentScale);
+        // Анимируем исчезновение лучей
+        if (this.ringRays.material) {
+          this.ringRays.material.opacity =
+            this.ringRays.userData.targetOpacity * (1 - easedProgress);
+        }
       }
 
       // Скрываем оверлей
@@ -991,6 +1134,14 @@ export class DetailModeSystem {
     });
     this.detailModeActorLabels = [];
 
+    // Удаляем лучи вокруг кольца
+    if (this.ringRays) {
+      this.scene.remove(this.ringRays);
+      this.ringRays.geometry.dispose();
+      this.ringRays.material.dispose();
+      this.ringRays = null;
+    }
+
     // Восстанавливаем деревья - восстанавливаем исходные значения opacity и transparent
     this.treeGroups.forEach(treeGroup => {
       treeGroup.traverse((object) => {
@@ -1052,7 +1203,7 @@ export class DetailModeSystem {
     this.detailModeOriginalZoom = null;
     this.originalCameraPosition = null;
     this.originalCameraTarget = null;
-    
+    this.neonRingRotationY = 0; // Сбрасываем угол поворота кольца
     // Вызываем callback для обновления состояния в main.js
     if (this.onStateChange) {
       this.onStateChange(false, null);

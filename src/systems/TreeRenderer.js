@@ -368,6 +368,62 @@ export class TreeRenderer {
     }
 
     /**
+     * Создание материала для светящейся оболочки
+     */
+    createGlowShellMaterial() {
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                glowColor: { value: new THREE.Color(0x88ccff) },
+            },
+            vertexShader: `
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                varying vec3 vWorldPosition;
+                
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    vPosition = position;
+                    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                    vWorldPosition = worldPos.xyz;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 glowColor;
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                varying vec3 vWorldPosition;
+                
+                void main() {
+                    // Нормализуем позицию для определения полюсов
+                    vec3 normalizedPos = normalize(vPosition);
+                    
+                    // Вычисляем близость к полюсам (0 на экваторе, 1 на полюсах)
+                    float polarIntensity = abs(normalizedPos.y);
+                    polarIntensity = pow(polarIntensity, 3.0);
+                    
+                    // Эффект Френеля для свечения по краям
+                    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+                    float fresnel = 1.0 - max(0.0, dot(vNormal, viewDirection));
+                    fresnel = pow(fresnel, 3.0);
+                    
+                    // Комбинируем эффекты для оболочки
+                    float glowIntensity = polarIntensity * fresnel * 2.0;
+                    
+                    // Холодный белый цвет
+                    vec3 finalColor = glowColor * glowIntensity;
+                    
+                    gl_FragColor = vec4(finalColor, glowIntensity * 0.8);
+                }
+            `,
+            transparent: true,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+        });
+    }
+
+    /**
      * Создание визуальных элементов для одного узла
      */
     createNodeVisuals(node, treeGroup, childrenCache) {
@@ -395,11 +451,17 @@ export class TreeRenderer {
             ];
             const levelColor = levelColors[node.level - 1] || DEFAULT_NODE_COLOR;
             material = new THREE.MeshStandardMaterial({
-                color: levelColor,
-                metalness: 0.5,
-                roughness: 0.5
+              color: levelColor,
+              emissive: levelColor, // Все ноды светятся
+              emissiveIntensity: isRoot ? 0.8 : 0.6, // Увеличена интенсивность свечения
+              metalness: 0.2,
+              roughness: 0.3,
+              transparent: true,
+              opacity: 0.5,
             });
         }
+        // Помечаем материал как всегда прозрачный
+          material.userData.alwaysTransparent = true;
         
         const sphere = new THREE.Mesh(geometry, material);
         sphere.position.copy(node.position);
@@ -415,17 +477,81 @@ export class TreeRenderer {
         sphere.userData.treeGroup = treeGroup;
         sphere.userData.nodeId = node.id;
         sphere.userData.nodeText = node.text;
-        
-        // Добавляем обводку (Edges)
-        const edges = new THREE.EdgesGeometry(geometry);
-        const edgeMaterial = new THREE.LineBasicMaterial({
-            color: NODE_MATERIAL_COLOR,
-            opacity: 0.3,
-            transparent: true
+        sphere.userData.rotationSpeed = 0.2 + Math.random() * 0.3;
+
+        // Добавляем частую неоновую сетку на ноду - вращается вместе со сферой
+        const wireframeGeometry = new THREE.SphereGeometry(
+            radius * 1.01, // Чуть больше радиуса для видимости
+            SPHERE_SEGMENTS * 4, // Очень частая сетка
+            SPHERE_RINGS * 4
+        );
+        const wireframe = new THREE.WireframeGeometry(wireframeGeometry);
+        const levelColors = [
+          LEVEL_1_COLOR, // Синий для уровня 1
+          LEVEL_2_COLOR, // Фиолетовый для уровня 2
+          LEVEL_3_COLOR, // Бирюзовый для уровня 3
+      ];
+      const levelColor = levelColors[node.level - 1] || DEFAULT_NODE_COLOR;
+        const wireMaterial = new THREE.LineBasicMaterial({
+            color: levelColor,
+            opacity: 0.4,
+            transparent: true,
         });
-        const edgeLines = new THREE.LineSegments(edges, edgeMaterial);
-        edgeLines.renderOrder = 200; // Обводки выше узлов, но ниже текста
-        sphere.add(edgeLines);
+        // const edgeLines = new THREE.LineSegments(edges, edgeMaterial);
+        // edgeLines.renderOrder = 200; // Обводки выше узлов, но ниже текста
+        // sphere.add(edgeLines);
+        // Помечаем материал сетки как всегда прозрачный
+        wireMaterial.userData.alwaysTransparent = true;
+        const wireLines = new THREE.LineSegments(wireframe, wireMaterial);
+        sphere.add(wireLines); // Добавляем к сфере, чтобы вращалась вместе с ней
+        wireframeGeometry.dispose();
+
+        // Создаем светящуюся оболочку как child
+        const shellMaterial = this.createGlowShellMaterial();
+        const shellGeometry = new THREE.SphereGeometry(
+            radius * 1.15,
+            SPHERE_SEGMENTS,
+            SPHERE_RINGS
+        );
+        const shell = new THREE.Mesh(shellGeometry, shellMaterial);
+        shell.userData.rotationSpeed = sphere.userData.rotationSpeed * 0.7;
+        shell.userData.isGlowShell = true; // Метка для игнорирования в raycasting
+        sphere.add(shell);
+
+        // Создаем статичное неоновое кольцо - всегда ориентировано к камере
+        const ringRadius = radius * 1.15;
+        const ringGeometry = new THREE.TorusGeometry(
+            ringRadius,
+            ringRadius * 0.005, // Уменьшили толщину кольца
+            16,
+            64
+        );
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0x88ccff,
+            transparent: true,
+            opacity: 0.8,
+        });
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.position.copy(node.position); // Позиция узла
+        ring.userData.isNeonRing = true;
+        ring.userData.nodePosition = node.position.clone(); // Сохраняем для обновления
+        treeGroup.add(ring); // Добавляем к группе, не к sphere
+
+        // Добавляем свечение к окружности
+        const ringGlowGeometry = new THREE.TorusGeometry(
+            ringRadius,
+            ringRadius * 0.01, // Уменьшили толщину свечения
+            16,
+            64
+        );
+        const ringGlowMaterial = new THREE.MeshBasicMaterial({
+            color: 0x88ccff,
+            transparent: true,
+            opacity: 0.4,
+        });
+        const ringGlow = new THREE.Mesh(ringGlowGeometry, ringGlowMaterial);
+        ringGlow.userData.isNeonRing = true;
+        ring.add(ringGlow);
         
         // Создаем текст на узле
         let textSprite = null;
@@ -437,6 +563,8 @@ export class TreeRenderer {
         // Сохраняем в массив всех узлов
         this.nodeMeshes.push({
             mesh: sphere,
+            shell: shell,
+            neonRing: ring,
             originalPosition: node.position.clone(),
             originalScale: new THREE.Vector3(1, 1, 1),
             originalMaterial: material.clone(),
@@ -788,5 +916,38 @@ export class TreeRenderer {
     getSceneBounds() {
         return this.sceneBounds;
     }
-}
 
+    /**
+     * Обновление анимации вращения сфер и ориентации колец
+     */
+    updateSphereRotations(deltaTime, camera) {
+        this.nodeMeshes.forEach(nodeData => {
+            if (nodeData.mesh && nodeData.mesh.userData.rotationSpeed) {
+                nodeData.mesh.rotation.y += nodeData.mesh.userData.rotationSpeed * deltaTime;
+                nodeData.mesh.rotation.x += nodeData.mesh.userData.rotationSpeed * 0.5 * deltaTime;
+
+                // Вращаем оболочку в обратном направлении для динамичности
+                if (nodeData.shell) {
+                    nodeData.shell.rotation.y -= nodeData.shell.userData.rotationSpeed * deltaTime;
+                    nodeData.shell.rotation.x += nodeData.shell.userData.rotationSpeed * 0.3 * deltaTime;
+                }
+
+                // Ориентируем неоновое кольцо к камере (billboarding)
+                if (nodeData.neonRing && camera) {
+                    nodeData.neonRing.quaternion.copy(camera.quaternion);
+
+                    // Применяем дополнительный поворот по Y в детальном режиме
+                    if (this.detailModeSystem && this.detailModeSystem.isDetailMode) {
+                        nodeData.neonRing.rotateY(this.detailModeSystem.neonRingRotationY);
+
+                        // Ориентируем лучи также к камере с тем же поворотом
+                        if (this.detailModeSystem.ringRays) {
+                            this.detailModeSystem.ringRays.quaternion.copy(camera.quaternion);
+                            this.detailModeSystem.ringRays.rotateY(this.detailModeSystem.neonRingRotationY);
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
