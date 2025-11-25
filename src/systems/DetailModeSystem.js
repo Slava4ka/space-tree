@@ -97,8 +97,11 @@ export class DetailModeSystem {
         originalOpacity: treeGroup.children.length > 0 ? treeGroup.children[0].material.opacity : 1
       });
       
-      // Сохраняем исходные значения opacity, transparent, depthTest и depthWrite для каждого объекта
+      // Сохраняем исходные значения opacity, transparent, depthTest, depthWrite и visible для каждого объекта
       treeGroup.traverse((object) => {
+        // Сохраняем исходное состояние видимости
+        const originalVisible = object.visible;
+        
         if (object.material) {
           if (Array.isArray(object.material)) {
             const states = object.material.map(mat => ({
@@ -107,15 +110,24 @@ export class DetailModeSystem {
               depthTest: mat.depthTest,
               depthWrite: mat.depthWrite
             }));
-            this.detailModeOriginalObjectStates.set(object, { materials: states });
+            this.detailModeOriginalObjectStates.set(object, { 
+              materials: states,
+              visible: originalVisible
+            });
           } else {
             this.detailModeOriginalObjectStates.set(object, {
               opacity: object.material.opacity,
               transparent: object.material.transparent,
               depthTest: object.material.depthTest,
-              depthWrite: object.material.depthWrite
+              depthWrite: object.material.depthWrite,
+              visible: originalVisible
             });
           }
+        } else {
+          // Сохраняем видимость даже если нет материала
+          this.detailModeOriginalObjectStates.set(object, {
+            visible: originalVisible
+          });
         }
         // Также сохраняем для спрайтов
         if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
@@ -123,7 +135,8 @@ export class DetailModeSystem {
             opacity: object.material.opacity,
             transparent: object.material.transparent,
             depthTest: object.material.depthTest,
-            depthWrite: object.material.depthWrite
+            depthWrite: object.material.depthWrite,
+            visible: originalVisible
           });
         }
       });
@@ -1334,12 +1347,15 @@ export class DetailModeSystem {
         });
       }
       
-      // В конце анимации (когда progress = 1) восстанавливаем исходные значения и скрываем обводку
+      // В конце анимации (когда progress = 1) восстанавливаем исходные значения
       if (progress >= 1) {
-        // Скрываем обводку (LineSegments) выбранного узла - она видна только в детальном режиме
+        // Восстанавливаем исходное состояние видимости обводки выбранного узла
         selectedMesh.traverse((child) => {
           if (child !== selectedMesh && child instanceof THREE.LineSegments && child.renderOrder === 200) {
-            child.visible = false;
+            const originalState = this.detailModeOriginalObjectStates.get(child);
+            if (originalState && originalState.visible !== undefined) {
+              child.visible = originalState.visible;
+            }
           }
         });
         
@@ -1368,16 +1384,16 @@ export class DetailModeSystem {
         // Восстанавливаем материалы всех объектов
         this.treeGroups.forEach(treeGroup => {
           treeGroup.traverse((object) => {
-            // Скрываем обводку (LineSegments) - она видна только в детальном режиме
-            if (object instanceof THREE.LineSegments && object.renderOrder === 200 && !object.userData?.isGlowShell) {
-              object.visible = false;
-              return;
+            // Восстанавливаем исходное состояние видимости из сохраненных данных
+            const originalState = this.detailModeOriginalObjectStates.get(object);
+            if (originalState && originalState.visible !== undefined) {
+              object.visible = originalState.visible;
+            } else {
+              // Если состояние не сохранено, делаем видимым (по умолчанию)
+              object.visible = true;
             }
             
-            object.visible = true;
-            
             // Восстанавливаем исходные значения opacity и transparent
-            const originalState = this.detailModeOriginalObjectStates.get(object);
             if (originalState) {
               if (object.material) {
                 if (Array.isArray(object.material) && originalState.materials) {
@@ -1565,18 +1581,17 @@ export class DetailModeSystem {
       this.ringRays = null;
     }
 
-    // Восстанавливаем деревья - восстанавливаем исходные значения opacity и transparent
+    // Восстанавливаем деревья - восстанавливаем исходные значения opacity, transparent и visible
     this.treeGroups.forEach(treeGroup => {
       treeGroup.traverse((object) => {
-        // Скрываем обводку (LineSegments) - она видна только в детальном режиме
-        if (object instanceof THREE.LineSegments && object.userData && !object.userData.isGlowShell && object.renderOrder === 200) {
-          object.visible = false;
-          return;
-        }
-        
-        object.visible = true;
-        
+        // Восстанавливаем исходное состояние видимости из сохраненных данных
         const originalState = this.detailModeOriginalObjectStates.get(object);
+        if (originalState && originalState.visible !== undefined) {
+          object.visible = originalState.visible;
+        } else {
+          // Если состояние не сохранено, делаем видимым (по умолчанию)
+          object.visible = true;
+        }
         if (originalState) {
           if (object.material) {
             if (Array.isArray(object.material) && originalState.materials) {

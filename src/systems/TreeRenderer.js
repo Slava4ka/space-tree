@@ -60,6 +60,32 @@ export class TreeRenderer {
         this.onNodeMeshesUpdate = options.onNodeMeshesUpdate || (() => {});
         this.onTreeGroupsUpdate = options.onTreeGroupsUpdate || (() => {});
         this.onFirefliesUpdate = options.onFirefliesUpdate || (() => {});
+        
+        // Кэш материалов для оптимизации
+        this.materialCache = {
+            rootNode: null,
+            rootGlowShell: null,
+            regularGlowShell: null
+        };
+    }
+
+    /**
+     * Очистка кэша материалов
+     */
+    disposeMaterialCache() {
+        // Очищаем кэш материалов
+        if (this.materialCache.rootNode) {
+            this.materialCache.rootNode.dispose();
+            this.materialCache.rootNode = null;
+        }
+        if (this.materialCache.rootGlowShell) {
+            this.materialCache.rootGlowShell.dispose();
+            this.materialCache.rootGlowShell = null;
+        }
+        if (this.materialCache.regularGlowShell) {
+            this.materialCache.regularGlowShell.dispose();
+            this.materialCache.regularGlowShell = null;
+        }
     }
 
     /**
@@ -67,6 +93,9 @@ export class TreeRenderer {
      * Освобождает все Three.js ресурсы для предотвращения утечек памяти
      */
     disposeScene() {
+        // Очищаем кэш материалов
+        this.disposeMaterialCache();
+        
         // 1. Очистка узлов (nodeMeshes содержит дополнительные данные)
         this.nodeMeshes.forEach(nodeData => {
             // Текстовый спрайт
@@ -368,59 +397,140 @@ export class TreeRenderer {
     }
 
     /**
-     * Создание материала для светящейся оболочки
+     * Общий шейдер для светящихся оболочек (оптимизация - один шейдер для всех типов)
      */
-    createGlowShellMaterial() {
-        return new THREE.ShaderMaterial({
+    static GLOW_SHELL_VERTEX_SHADER = `
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying vec3 vWorldPosition;
+        
+        void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vPosition = position;
+            vec4 worldPos = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPos.xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `;
+
+    static GLOW_SHELL_FRAGMENT_SHADER = `
+        uniform vec3 glowColor;
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying vec3 vWorldPosition;
+        
+        void main() {
+            // Нормализуем позицию для определения полюсов
+            vec3 normalizedPos = normalize(vPosition);
+            
+            // Вычисляем близость к полюсам (0 на экваторе, 1 на полюсах)
+            float polarIntensity = abs(normalizedPos.y);
+            polarIntensity = pow(polarIntensity, 3.0);
+            
+            // Эффект Френеля для свечения по краям
+            vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+            float fresnel = 1.0 - max(0.0, dot(vNormal, viewDirection));
+            fresnel = pow(fresnel, 3.0);
+            
+            // Комбинируем эффекты для оболочки
+            float glowIntensity = polarIntensity * fresnel * 2.0;
+            
+            vec3 finalColor = glowColor * glowIntensity;
+            
+            gl_FragColor = vec4(finalColor, glowIntensity * 0.8);
+        }
+    `;
+
+    static ROOT_GLOW_SHELL_FRAGMENT_SHADER = `
+        uniform vec3 glowColor;
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying vec3 vWorldPosition;
+        
+        void main() {
+            // Нормализуем позицию для определения полюсов
+            vec3 normalizedPos = normalize(vPosition);
+            
+            // Вычисляем близость к полюсам (0 на экваторе, 1 на полюсах)
+            float polarIntensity = abs(normalizedPos.y);
+            polarIntensity = pow(polarIntensity, 3.0);
+            
+            // Эффект Френеля для свечения по краям
+            vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+            float fresnel = 1.0 - max(0.0, dot(vNormal, viewDirection));
+            fresnel = pow(fresnel, 2.5);
+            
+            // Комбинируем эффекты для оболочки с очень ярким свечением
+            float glowIntensity = (polarIntensity + fresnel) * 3.0;
+            
+            // Яркий неоновый пурпурный цвет
+            vec3 finalColor = glowColor * glowIntensity;
+            
+            gl_FragColor = vec4(finalColor, glowIntensity * 0.6);
+        }
+    `;
+
+    /**
+     * Создание материала для светящейся оболочки (с кэшированием)
+     * @param {number} glowColor - Цвет свечения в hex формате
+     * @param {boolean} isRoot - Является ли оболочка для корневого узла
+     */
+    createGlowShellMaterial(glowColor = 0x88ccff, isRoot = false) {
+        const cacheKey = isRoot ? 'rootGlowShell' : 'regularGlowShell';
+        
+        // Используем кэш, если материал уже создан
+        if (this.materialCache[cacheKey]) {
+            // Обновляем цвет, если он изменился
+            if (this.materialCache[cacheKey].uniforms.glowColor.value.getHex() !== glowColor) {
+                this.materialCache[cacheKey].uniforms.glowColor.value.setHex(glowColor);
+            }
+            return this.materialCache[cacheKey];
+        }
+        
+        // Создаем новый материал
+        const material = new THREE.ShaderMaterial({
             uniforms: {
-                glowColor: { value: new THREE.Color(0x88ccff) },
+                glowColor: { value: new THREE.Color(glowColor) },
             },
-            vertexShader: `
-                varying vec3 vNormal;
-                varying vec3 vPosition;
-                varying vec3 vWorldPosition;
-                
-                void main() {
-                    vNormal = normalize(normalMatrix * normal);
-                    vPosition = position;
-                    vec4 worldPos = modelMatrix * vec4(position, 1.0);
-                    vWorldPosition = worldPos.xyz;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform vec3 glowColor;
-                varying vec3 vNormal;
-                varying vec3 vPosition;
-                varying vec3 vWorldPosition;
-                
-                void main() {
-                    // Нормализуем позицию для определения полюсов
-                    vec3 normalizedPos = normalize(vPosition);
-                    
-                    // Вычисляем близость к полюсам (0 на экваторе, 1 на полюсах)
-                    float polarIntensity = abs(normalizedPos.y);
-                    polarIntensity = pow(polarIntensity, 3.0);
-                    
-                    // Эффект Френеля для свечения по краям
-                    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-                    float fresnel = 1.0 - max(0.0, dot(vNormal, viewDirection));
-                    fresnel = pow(fresnel, 3.0);
-                    
-                    // Комбинируем эффекты для оболочки
-                    float glowIntensity = polarIntensity * fresnel * 2.0;
-                    
-                    // Холодный белый цвет
-                    vec3 finalColor = glowColor * glowIntensity;
-                    
-                    gl_FragColor = vec4(finalColor, glowIntensity * 0.8);
-                }
-            `,
+            vertexShader: TreeRenderer.GLOW_SHELL_VERTEX_SHADER,
+            fragmentShader: isRoot 
+                ? TreeRenderer.ROOT_GLOW_SHELL_FRAGMENT_SHADER 
+                : TreeRenderer.GLOW_SHELL_FRAGMENT_SHADER,
             transparent: true,
             side: THREE.DoubleSide,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
         });
+        
+        // Сохраняем в кэш
+        this.materialCache[cacheKey] = material;
+        
+        return material;
+    }
+
+    /**
+     * Создание материала для корневого узла (с кэшированием)
+     */
+    createRootNodeMaterial() {
+        // Используем кэш, если материал уже создан
+        if (this.materialCache.rootNode) {
+            return this.materialCache.rootNode;
+        }
+        
+        // Создаем новый материал
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xff00ff, // Яркий неоновый пурпурный
+            emissive: 0xff00ff, // Яркий неоновый пурпурный для свечения
+            emissiveIntensity: 2.0, // Очень высокая интенсивность для максимального неонового эффекта
+            metalness: 0.1,
+            roughness: 0.05, // Очень низкая шероховатость для глянцевого эффекта
+            transparent: false,
+        });
+        
+        // Сохраняем в кэш
+        this.materialCache.rootNode = material;
+        
+        return material;
     }
 
     /**
@@ -434,14 +544,8 @@ export class TreeRenderer {
         
         let material;
         if (isRoot) {
-            // Корневые узлы (вызовы) - одинаковый золотистый цвет для всех
-            material = new THREE.MeshStandardMaterial({
-                color: ROOT_NODE_COLOR,
-                emissive: ROOT_NODE_COLOR,
-                emissiveIntensity: 0.5,
-                metalness: 0.3,
-                roughness: 0.2
-            });
+            // Корневые узлы - фиолетово-неоновый градиент
+            material = this.createRootNodeMaterial();
         } else {
             // Обычные узлы - цвет зависит от уровня
             const levelColors = [
@@ -459,9 +563,9 @@ export class TreeRenderer {
               transparent: true,
               opacity: 0.5,
             });
+            // Помечаем материал как всегда прозрачный (только для обычных узлов)
+            material.userData.alwaysTransparent = true;
         }
-        // Помечаем материал как всегда прозрачный
-          material.userData.alwaysTransparent = true;
         
         const sphere = new THREE.Mesh(geometry, material);
         sphere.position.copy(node.position);
@@ -508,7 +612,10 @@ export class TreeRenderer {
         wireframeGeometry.dispose();
 
         // Создаем светящуюся оболочку как child
-        const shellMaterial = this.createGlowShellMaterial();
+        // Для корневых узлов используем специальную оболочку с фиолетовым свечением
+        const shellMaterial = isRoot 
+            ? this.createGlowShellMaterial(0xff00ff, true) 
+            : this.createGlowShellMaterial(0x88ccff, false);
         const shellGeometry = new THREE.SphereGeometry(
             radius * 1.15,
             SPHERE_SEGMENTS,
@@ -941,6 +1048,20 @@ export class TreeRenderer {
      * Обновление анимации вращения сфер и ориентации колец
      */
     updateSphereRotations(deltaTime, camera) {
+        // Обновляем uniform позиции камеры для оболочек корневых узлов
+        if (camera) {
+            this.nodeMeshes.forEach(nodeData => {
+                if (nodeData.shell && nodeData.shell.material) {
+                    const material = nodeData.shell.material;
+                    // Проверяем, является ли материал ShaderMaterial для оболочки корневого узла
+                    if (material instanceof THREE.ShaderMaterial && material.uniforms && material.uniforms.cameraPosition) {
+                        // cameraPosition доступен автоматически в Three.js шейдерах
+                        // Но если нужен uniform, можно добавить его обновление здесь
+                    }
+                }
+            });
+        }
+
         this.nodeMeshes.forEach(nodeData => {
             if (nodeData.mesh && nodeData.mesh.userData.rotationSpeed) {
                 nodeData.mesh.rotation.y += nodeData.mesh.userData.rotationSpeed * deltaTime;
