@@ -341,7 +341,8 @@ export class DetailModeSystem {
     button.style.opacity = '0';
     button.style.transition = 'all 0.3s ease-in-out';
     button.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.7)';
-    button.style.background = 'rgba(0, 0, 0, 0.85)';
+    // Градиент от синего к фиолетовому в стиле приложения
+    button.style.background = 'linear-gradient(135deg, rgba(74, 144, 226, 0.9), rgba(123, 104, 238, 0.9))';
     button.style.border = '2px solid rgba(255, 255, 255, 0.3)';
     button.style.display = 'flex';
     button.style.alignItems = 'center';
@@ -356,13 +357,17 @@ export class DetailModeSystem {
     // Улучшенный hover эффект для десктопа
     if (!isMobile) {
       button.addEventListener('mouseenter', () => {
-        button.style.background = 'rgba(255, 0, 0, 0.8)';
+        // Более яркий градиент при наведении
+        button.style.background = 'linear-gradient(135deg, rgba(74, 144, 226, 1), rgba(123, 104, 238, 1))';
         button.style.transform = 'scale(1.1)';
+        button.style.boxShadow = '0 8px 25px rgba(74, 144, 226, 0.5)';
       });
       
       button.addEventListener('mouseleave', () => {
-        button.style.background = 'rgba(0, 0, 0, 0.85)';
+        // Возвращаем исходный градиент
+        button.style.background = 'linear-gradient(135deg, rgba(74, 144, 226, 0.9), rgba(123, 104, 238, 0.9))';
         button.style.transform = 'scale(1)';
+        button.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.7)';
       });
     }
 
