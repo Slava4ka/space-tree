@@ -653,11 +653,16 @@ export class TreeRenderer {
         context.lineWidth = TEXT_STROKE_WIDTH;
         context.font = `bold ${fontSize}px Arial`;
         context.textAlign = 'center';
-        context.textBaseline = 'top';
+        context.textBaseline = 'middle'; // Центрируем по вертикали
         
         // Рисуем каждую строку с правильным вертикальным смещением
         const centerX = (textWidth + TEXT_PADDING) / 2;
-        const startY = TEXT_PADDING / 2;
+        const canvasCenterY = (textHeight + TEXT_PADDING) / 2; // Центр canvas по вертикали
+        
+        // Рассчитываем начальную позицию Y для первой строки
+        // Чтобы весь текст был центрирован, первая строка должна быть выше центра
+        const totalTextHeight = lines.length * lineHeight - (lineHeight - fontSize);
+        const startY = canvasCenterY - (totalTextHeight / 2) + (fontSize / 2);
         
         lines.forEach((line, index) => {
             const y = startY + index * lineHeight;
@@ -874,11 +879,16 @@ export class TreeRenderer {
         context.lineWidth = TEXT_STROKE_WIDTH;
         context.font = `bold ${fontSize}px Arial`;
         context.textAlign = 'center';
-        context.textBaseline = 'top';
+        context.textBaseline = 'middle'; // Центрируем по вертикали
 
         // Рисуем каждую строку с правильным вертикальным смещением
         const centerX = (textWidth + TEXT_PADDING) / 2;
-        const startY = TEXT_PADDING / 2;
+        const canvasCenterY = (textHeight + TEXT_PADDING) / 2; // Центр canvas по вертикали
+
+        // Рассчитываем начальную позицию Y для первой строки
+        // Чтобы весь текст был центрирован, первая строка должна быть выше центра
+        const totalTextHeight = lines.length * lineHeight - (lineHeight - fontSize);
+        const startY = canvasCenterY - (totalTextHeight / 2) + (fontSize / 2);
 
         lines.forEach((line, index) => {
             const y = startY + index * lineHeight;
