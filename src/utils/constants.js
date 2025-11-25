@@ -77,6 +77,13 @@ export const ROOT_TEXT_SIZE = 84;                  // Размер шрифта 
 export const NODE_TEXT_SIZE = 42;                  // Размер шрифта текста обычных узлов (уровни 1-3)
 export const MAX_WORDS_PER_LINE = 4;                // Максимальное количество слов в одной строке текста
 
+// ==================== Word Label константы ====================
+export const WORD_LABEL_FONT_SIZE = 44;            // Размер шрифта надписей слов
+export const WORD_LABEL_CANVAS_WIDTH = 400;        // Ширина canvas надписи
+export const WORD_LABEL_CANVAS_HEIGHT = 120;       // Высота canvas надписи
+export const WORD_LABEL_SCALE_MULTIPLIER = 1.2;    // Множитель масштаба надписей
+export const WORD_LABEL_PLACEMENT_RADIUS = 450;    // Радиус размещения надписей вокруг узла
+
 // Градиент свечения для светлячков
 export const GLOW_GRADIENT_COLORS = [
   { stop: 0, color: 'rgba(0, 200, 255, 1)' },      // Яркий центр
