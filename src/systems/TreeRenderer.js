@@ -67,6 +67,9 @@ export class TreeRenderer {
             rootGlowShell: null,
             regularGlowShell: null
         };
+        
+        // Кэш геометрий сетки для оптимизации (ключ: "segments_rings")
+        this.wireframeGeometryCache = new Map();
     }
 
     /**
@@ -89,12 +92,27 @@ export class TreeRenderer {
     }
 
     /**
+     * Очистка кэша геометрий сетки
+     */
+    disposeWireframeGeometryCache() {
+        if (this.wireframeGeometryCache) {
+            this.wireframeGeometryCache.forEach(geometry => {
+                geometry.dispose();
+            });
+            this.wireframeGeometryCache.clear();
+        }
+    }
+
+    /**
      * Полная очистка сцены перед пересозданием
      * Освобождает все Three.js ресурсы для предотвращения утечек памяти
      */
     disposeScene() {
         // Очищаем кэш материалов
         this.disposeMaterialCache();
+        
+        // Очищаем кэш геометрий сетки
+        this.disposeWireframeGeometryCache();
         
         // 1. Очистка узлов (nodeMeshes содержит дополнительные данные)
         this.nodeMeshes.forEach(nodeData => {
@@ -534,6 +552,118 @@ export class TreeRenderer {
     }
 
     /**
+     * Создание геометрии сетки сферы без диагональных линий (с кэшированием)
+     * Создает только горизонтальные (параллели) и вертикальные (меридианы) линии
+     * @param {number} radius - Радиус сферы
+     * @param {number} segments - Количество вертикальных линий (меридианов)
+     * @param {number} rings - Количество горизонтальных колец (параллелей)
+     * @returns {THREE.BufferGeometry} Геометрия для LineSegments
+     */
+    createSphereWireframeGeometry(radius, segments, rings) {
+        // Кэшируем геометрию по параметрам segments и rings (радиус применяется через scale)
+        const cacheKey = `${segments}_${rings}`;
+        
+        // Проверяем кэш
+        if (this.wireframeGeometryCache.has(cacheKey)) {
+            const cachedGeometry = this.wireframeGeometryCache.get(cacheKey);
+            // Клонируем геометрию и применяем масштаб для радиуса
+            const geometry = cachedGeometry.clone();
+            geometry.scale(radius, radius, radius);
+            return geometry;
+        }
+        
+        // Предвычисляем тригонометрические значения для оптимизации
+        const phiValues = [];
+        const sinPhiValues = [];
+        const cosPhiValues = [];
+        for (let ring = 0; ring <= rings; ring++) {
+            const phi = (ring / rings) * Math.PI;
+            phiValues.push(phi);
+            sinPhiValues.push(Math.sin(phi));
+            cosPhiValues.push(Math.cos(phi));
+        }
+        
+        const thetaStep = (Math.PI * 2) / segments;
+        const thetaValues = [];
+        const cosThetaValues = [];
+        const sinThetaValues = [];
+        for (let seg = 0; seg <= segments; seg++) {
+            const theta = seg * thetaStep;
+            thetaValues.push(theta);
+            cosThetaValues.push(Math.cos(theta));
+            sinThetaValues.push(Math.sin(theta));
+        }
+        
+        // Вычисляем размер массива заранее для оптимизации
+        // Параллели: (rings + 1) * segments * 2 точек (начало и конец каждой линии)
+        // Меридианы: segments * rings * 2 точек
+        const totalLines = (rings + 1) * segments + segments * rings;
+        const positions = new Float32Array(totalLines * 6); // 6 значений на линию (2 точки * 3 координаты)
+        let positionIndex = 0;
+        
+        // Горизонтальные линии (параллели) - кольца вокруг сферы
+        // Каждое кольцо - это замкнутая линия по окружности
+        for (let ring = 0; ring <= rings; ring++) {
+            const sinPhi = sinPhiValues[ring];
+            const cosPhi = cosPhiValues[ring];
+            
+            // Создаем замкнутое кольцо: каждая точка соединяется со следующей
+            for (let seg = 0; seg < segments; seg++) {
+                // Текущая точка
+                const cosTheta1 = cosThetaValues[seg];
+                const sinTheta1 = sinThetaValues[seg];
+                positions[positionIndex++] = sinPhi * cosTheta1; // x1
+                positions[positionIndex++] = cosPhi; // y1
+                positions[positionIndex++] = sinPhi * sinTheta1; // z1
+                
+                // Следующая точка
+                const cosTheta2 = cosThetaValues[seg + 1];
+                const sinTheta2 = sinThetaValues[seg + 1];
+                positions[positionIndex++] = sinPhi * cosTheta2; // x2
+                positions[positionIndex++] = cosPhi; // y2
+                positions[positionIndex++] = sinPhi * sinTheta2; // z2
+            }
+        }
+        
+        // Вертикальные линии (меридианы) - линии от полюса к полюсу
+        // Каждый меридиан - это линия от северного полюса к южному
+        for (let seg = 0; seg < segments; seg++) {
+            const cosTheta = cosThetaValues[seg];
+            const sinTheta = sinThetaValues[seg];
+            
+            // Создаем меридиан: каждая точка соединяется со следующей по вертикали
+            for (let ring = 0; ring < rings; ring++) {
+                // Текущая точка
+                const sinPhi1 = sinPhiValues[ring];
+                const cosPhi1 = cosPhiValues[ring];
+                positions[positionIndex++] = sinPhi1 * cosTheta; // x1
+                positions[positionIndex++] = cosPhi1; // y1
+                positions[positionIndex++] = sinPhi1 * sinTheta; // z1
+                
+                // Следующая точка (выше по меридиану)
+                const sinPhi2 = sinPhiValues[ring + 1];
+                const cosPhi2 = cosPhiValues[ring + 1];
+                positions[positionIndex++] = sinPhi2 * cosTheta; // x2
+                positions[positionIndex++] = cosPhi2; // y2
+                positions[positionIndex++] = sinPhi2 * sinTheta; // z2
+            }
+        }
+        
+        // Создаем геометрию с единичным радиусом (радиус применяется через scale)
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        
+        // Сохраняем в кэш с единичным радиусом
+        this.wireframeGeometryCache.set(cacheKey, geometry);
+        
+        // Клонируем и применяем масштаб для текущего радиуса
+        const scaledGeometry = geometry.clone();
+        scaledGeometry.scale(radius, radius, radius);
+        
+        return scaledGeometry;
+    }
+
+    /**
      * Создание визуальных элементов для одного узла
      */
     createNodeVisuals(node, treeGroup, childrenCache) {
@@ -584,32 +714,34 @@ export class TreeRenderer {
         sphere.userData.rotationSpeed = 0.2 + Math.random() * 0.3;
 
         // Добавляем частую неоновую сетку на ноду - вращается вместе со сферой
-        const wireframeGeometry = new THREE.SphereGeometry(
-            radius * 1.01, // Чуть больше радиуса для видимости
-            SPHERE_SEGMENTS * 4, // Очень частая сетка
-            SPHERE_RINGS * 4
+        // Создаем сетку только из горизонтальных и вертикальных линий (без диагоналей)
+        const wireframeRadius = radius * 1.01; // Чуть больше радиуса для видимости
+        const wireframeSegments = SPHERE_SEGMENTS * 4; // Количество вертикальных линий (меридианов)
+        const wireframeRings = SPHERE_RINGS * 2; // Количество горизонтальных колец (параллелей)
+        
+        const wireframeGeometry = this.createSphereWireframeGeometry(
+            wireframeRadius,
+            wireframeSegments,
+            wireframeRings
         );
-        const wireframe = new THREE.WireframeGeometry(wireframeGeometry);
+        
         const levelColors = [
-          LEVEL_1_COLOR, // Синий для уровня 1
-          LEVEL_2_COLOR, // Фиолетовый для уровня 2
-          LEVEL_3_COLOR, // Бирюзовый для уровня 3
-      ];
-      const levelColor = levelColors[node.level - 1] || DEFAULT_NODE_COLOR;
+            LEVEL_1_COLOR, // Синий для уровня 1
+            LEVEL_2_COLOR, // Фиолетовый для уровня 2
+            LEVEL_3_COLOR, // Бирюзовый для уровня 3
+        ];
+        const levelColor = levelColors[node.level - 1] || DEFAULT_NODE_COLOR;
+        
         const wireMaterial = new THREE.LineBasicMaterial({
             color: levelColor,
             opacity: 0.4,
             transparent: true,
         });
-        // const edgeLines = new THREE.LineSegments(edges, edgeMaterial);
-        // edgeLines.renderOrder = 200; // Обводки выше узлов, но ниже текста
-        // sphere.add(edgeLines);
-        // Помечаем материал сетки как всегда прозрачный
         wireMaterial.userData.alwaysTransparent = true;
-        const wireLines = new THREE.LineSegments(wireframe, wireMaterial);
+        
+        const wireLines = new THREE.LineSegments(wireframeGeometry, wireMaterial);
         wireLines.renderOrder = 200; // Обводки выше узлов, но ниже текста
         sphere.add(wireLines); // Добавляем к сфере, чтобы вращалась вместе с ней
-        wireframeGeometry.dispose();
 
         // Создаем светящуюся оболочку как child
         // Для корневых узлов используем специальную оболочку с фиолетовым свечением

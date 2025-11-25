@@ -824,7 +824,7 @@ export class DetailModeSystem {
       const baseNodeRadius = nodeDataForFirefly ? (nodeDataForFirefly.node.level === 0 ? this.rootRadius : this.nodeRadius) : this.nodeRadius;
       
       this.fireflies.forEach((firefly) => {
-        if (firefly.mesh && firefly.nodeId === selectedNodeId) {
+        if (firefly.mesh && firefly.nodeId === selectedNodeId && this.detailModeOriginalFireflyPositions) {
           const originalFireflyData = this.detailModeOriginalFireflyPositions.get(firefly);
           if (originalFireflyData) {
             // Обновляем nodePosition для светлячка (базовая позиция узла)
@@ -1003,6 +1003,13 @@ export class DetailModeSystem {
     const startTime = Date.now();
     const duration = this.DETAIL_MODE_ANIMATION_TIME * 1000;
     const nodeData = this.detailModeNode;
+    
+    // Проверяем, что nodeData существует
+    if (!nodeData) {
+      console.warn('animateNodeReturn: nodeData is null, skipping animation');
+      return;
+    }
+    
     const selectedMesh = nodeData.mesh;
     
     // СРАЗУ в начале анимации возврата делаем узел видимым
@@ -1039,6 +1046,11 @@ export class DetailModeSystem {
     }
 
     const animate = () => {
+      // Проверяем, что nodeData все еще существует
+      if (!nodeData || !this.detailModeNode) {
+        return;
+      }
+      
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const easedProgress = this.easeInOut(progress);
@@ -1350,78 +1362,82 @@ export class DetailModeSystem {
       // В конце анимации (когда progress = 1) восстанавливаем исходные значения
       if (progress >= 1) {
         // Восстанавливаем исходное состояние видимости обводки выбранного узла
-        selectedMesh.traverse((child) => {
-          if (child !== selectedMesh && child instanceof THREE.LineSegments && child.renderOrder === 200) {
-            const originalState = this.detailModeOriginalObjectStates.get(child);
-            if (originalState && originalState.visible !== undefined) {
-              child.visible = originalState.visible;
+        if (this.detailModeOriginalObjectStates) {
+          selectedMesh.traverse((child) => {
+            if (child !== selectedMesh && child instanceof THREE.LineSegments && child.renderOrder === 200) {
+              const originalState = this.detailModeOriginalObjectStates.get(child);
+              if (originalState && originalState.visible !== undefined) {
+                child.visible = originalState.visible;
+              }
             }
-          }
-        });
-        
-        // Восстанавливаем материалы выбранного узла
-        const originalMeshState = this.detailModeOriginalObjectStates.get(selectedMesh);
-        if (originalMeshState) {
-          if (selectedMesh.material) {
-            if (Array.isArray(selectedMesh.material) && originalMeshState.materials) {
-              selectedMesh.material.forEach((mat, index) => {
-                if (originalMeshState.materials[index]) {
-                  mat.opacity = originalMeshState.materials[index].opacity;
-                  mat.transparent = originalMeshState.materials[index].transparent;
-                  mat.depthTest = originalMeshState.materials[index].depthTest;
-                  mat.depthWrite = originalMeshState.materials[index].depthWrite;
-                }
-              });
-            } else if (!Array.isArray(selectedMesh.material)) {
-              selectedMesh.material.opacity = originalMeshState.opacity;
-              selectedMesh.material.transparent = originalMeshState.transparent;
-              selectedMesh.material.depthTest = originalMeshState.depthTest;
-              selectedMesh.material.depthWrite = originalMeshState.depthWrite;
+          });
+          
+          // Восстанавливаем материалы выбранного узла
+          const originalMeshState = this.detailModeOriginalObjectStates.get(selectedMesh);
+          if (originalMeshState) {
+            if (selectedMesh.material) {
+              if (Array.isArray(selectedMesh.material) && originalMeshState.materials) {
+                selectedMesh.material.forEach((mat, index) => {
+                  if (originalMeshState.materials[index]) {
+                    mat.opacity = originalMeshState.materials[index].opacity;
+                    mat.transparent = originalMeshState.materials[index].transparent;
+                    mat.depthTest = originalMeshState.materials[index].depthTest;
+                    mat.depthWrite = originalMeshState.materials[index].depthWrite;
+                  }
+                });
+              } else if (!Array.isArray(selectedMesh.material)) {
+                selectedMesh.material.opacity = originalMeshState.opacity;
+                selectedMesh.material.transparent = originalMeshState.transparent;
+                selectedMesh.material.depthTest = originalMeshState.depthTest;
+                selectedMesh.material.depthWrite = originalMeshState.depthWrite;
+              }
             }
           }
         }
         
         // Восстанавливаем материалы всех объектов
-        this.treeGroups.forEach(treeGroup => {
-          treeGroup.traverse((object) => {
-            // Восстанавливаем исходное состояние видимости из сохраненных данных
-            const originalState = this.detailModeOriginalObjectStates.get(object);
-            if (originalState && originalState.visible !== undefined) {
-              object.visible = originalState.visible;
-            } else {
-              // Если состояние не сохранено, делаем видимым (по умолчанию)
-              object.visible = true;
-            }
-            
-            // Восстанавливаем исходные значения opacity и transparent
-            if (originalState) {
-              if (object.material) {
-                if (Array.isArray(object.material) && originalState.materials) {
-                  object.material.forEach((mat, index) => {
-                    if (originalState.materials[index]) {
-                      mat.opacity = originalState.materials[index].opacity;
-                      mat.transparent = originalState.materials[index].transparent;
-                      mat.depthTest = originalState.materials[index].depthTest;
-                      mat.depthWrite = originalState.materials[index].depthWrite;
-                    }
-                  });
-                } else if (!Array.isArray(object.material)) {
+        if (this.detailModeOriginalObjectStates) {
+          this.treeGroups.forEach(treeGroup => {
+            treeGroup.traverse((object) => {
+              // Восстанавливаем исходное состояние видимости из сохраненных данных
+              const originalState = this.detailModeOriginalObjectStates.get(object);
+              if (originalState && originalState.visible !== undefined) {
+                object.visible = originalState.visible;
+              } else {
+                // Если состояние не сохранено, делаем видимым (по умолчанию)
+                object.visible = true;
+              }
+              
+              // Восстанавливаем исходные значения opacity и transparent
+              if (originalState) {
+                if (object.material) {
+                  if (Array.isArray(object.material) && originalState.materials) {
+                    object.material.forEach((mat, index) => {
+                      if (originalState.materials[index]) {
+                        mat.opacity = originalState.materials[index].opacity;
+                        mat.transparent = originalState.materials[index].transparent;
+                        mat.depthTest = originalState.materials[index].depthTest;
+                        mat.depthWrite = originalState.materials[index].depthWrite;
+                      }
+                    });
+                  } else if (!Array.isArray(object.material)) {
+                    object.material.opacity = originalState.opacity;
+                    object.material.transparent = originalState.transparent;
+                    object.material.depthTest = originalState.depthTest;
+                    object.material.depthWrite = originalState.depthWrite;
+                  }
+                }
+                
+                if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
                   object.material.opacity = originalState.opacity;
                   object.material.transparent = originalState.transparent;
                   object.material.depthTest = originalState.depthTest;
                   object.material.depthWrite = originalState.depthWrite;
                 }
               }
-              
-              if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
-                object.material.opacity = originalState.opacity;
-                object.material.transparent = originalState.transparent;
-                object.material.depthTest = originalState.depthTest;
-                object.material.depthWrite = originalState.depthWrite;
-              }
-            }
+            });
           });
-        });
+        }
       }
       
       if (selectedTextSprite && selectedTextSprite.material) {
@@ -1468,7 +1484,7 @@ export class DetailModeSystem {
       const selectedNodeId = nodeData.node.id;
       const averageScale = (currentScale.x + currentScale.y + currentScale.z) / 3;
       this.fireflies.forEach((firefly) => {
-        if (firefly.mesh && firefly.nodeId === selectedNodeId && firefly.nodePosition) {
+        if (firefly.mesh && firefly.nodeId === selectedNodeId && firefly.nodePosition && this.detailModeOriginalFireflyPositions) {
           const originalFireflyData = this.detailModeOriginalFireflyPositions.get(firefly);
           if (originalFireflyData) {
             // Вычисляем смещение узла от центра к исходной позиции
@@ -1582,61 +1598,71 @@ export class DetailModeSystem {
     }
 
     // Восстанавливаем деревья - восстанавливаем исходные значения opacity, transparent и visible
-    this.treeGroups.forEach(treeGroup => {
-      treeGroup.traverse((object) => {
-        // Восстанавливаем исходное состояние видимости из сохраненных данных
-        const originalState = this.detailModeOriginalObjectStates.get(object);
-        if (originalState && originalState.visible !== undefined) {
-          object.visible = originalState.visible;
-        } else {
-          // Если состояние не сохранено, делаем видимым (по умолчанию)
-          object.visible = true;
-        }
-        if (originalState) {
-          if (object.material) {
-            if (Array.isArray(object.material) && originalState.materials) {
-              object.material.forEach((mat, index) => {
-                if (originalState.materials[index]) {
-                  mat.opacity = originalState.materials[index].opacity;
-                  mat.transparent = originalState.materials[index].transparent;
-                  mat.depthTest = originalState.materials[index].depthTest;
-                  mat.depthWrite = originalState.materials[index].depthWrite;
-                }
-              });
-            } else if (!Array.isArray(object.material)) {
+    if (this.detailModeOriginalObjectStates) {
+      this.treeGroups.forEach(treeGroup => {
+        treeGroup.traverse((object) => {
+          // Восстанавливаем исходное состояние видимости из сохраненных данных
+          const originalState = this.detailModeOriginalObjectStates.get(object);
+          if (originalState && originalState.visible !== undefined) {
+            object.visible = originalState.visible;
+          } else {
+            // Если состояние не сохранено, делаем видимым (по умолчанию)
+            object.visible = true;
+          }
+          
+          // Восстанавливаем исходные значения opacity и transparent
+          if (originalState) {
+            if (object.material) {
+              if (Array.isArray(object.material) && originalState.materials) {
+                object.material.forEach((mat, index) => {
+                  if (originalState.materials[index]) {
+                    mat.opacity = originalState.materials[index].opacity;
+                    mat.transparent = originalState.materials[index].transparent;
+                    mat.depthTest = originalState.materials[index].depthTest;
+                    mat.depthWrite = originalState.materials[index].depthWrite;
+                  }
+                });
+              } else if (!Array.isArray(object.material)) {
+                object.material.opacity = originalState.opacity;
+                object.material.transparent = originalState.transparent;
+                object.material.depthTest = originalState.depthTest;
+                object.material.depthWrite = originalState.depthWrite;
+              }
+            }
+            
+            if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
               object.material.opacity = originalState.opacity;
               object.material.transparent = originalState.transparent;
               object.material.depthTest = originalState.depthTest;
               object.material.depthWrite = originalState.depthWrite;
+              object.visible = true;
+            }
+          } else {
+            // Если не нашли сохраненное состояние, устанавливаем значения по умолчанию
+            if (object.material) {
+              if (Array.isArray(object.material)) {
+                object.material.forEach(mat => {
+                  mat.opacity = 1.0;
+                  mat.transparent = false;
+                });
+              } else {
+                object.material.opacity = 1.0;
+                object.material.transparent = false;
+              }
             }
           }
-          
-          if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
-            object.material.opacity = originalState.opacity;
-            object.material.transparent = originalState.transparent;
-            object.material.depthTest = originalState.depthTest;
-            object.material.depthWrite = originalState.depthWrite;
-            object.visible = true;
-          }
-        } else {
-          // Если не нашли сохраненное состояние, устанавливаем значения по умолчанию
-          if (object.material) {
-            if (Array.isArray(object.material)) {
-              object.material.forEach(mat => {
-                mat.opacity = 1.0;
-                mat.transparent = false;
-              });
-            } else {
-              object.material.opacity = 1.0;
-              object.material.transparent = false;
-            }
-          }
-        }
+        });
       });
-    });
+    }
     
     this.detailModeOriginalStates = null;
-    this.detailModeOriginalObjectStates.clear();
+    if (this.detailModeOriginalObjectStates) {
+      this.detailModeOriginalObjectStates.clear();
+    }
+    this.detailModeOriginalObjectStates = null;
+    if (this.detailModeOriginalFireflyPositions) {
+      this.detailModeOriginalFireflyPositions.clear();
+    }
     this.detailModeOriginalFireflyPositions = null;
 
     // Разблокируем элементы управления зумом
@@ -1673,7 +1699,7 @@ export class DetailModeSystem {
 
     // Обновляем сохраненные смещения для светлячков выбранного узла
     this.fireflies.forEach((firefly) => {
-      if (firefly.mesh && firefly.nodeId === selectedNodeId) {
+      if (firefly.mesh && firefly.nodeId === selectedNodeId && this.detailModeOriginalFireflyPositions) {
         const originalFireflyData = this.detailModeOriginalFireflyPositions.get(firefly);
         if (originalFireflyData) {
           // Сохраняем новое смещение

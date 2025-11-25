@@ -84,7 +84,6 @@ export class CameraManager {
    * Установить зум
    */
   setZoom(zoom) {
-console.trace()
     this.currentZoom = THREE.MathUtils.clamp(zoom, this.minZoom, this.maxZoom);
     this.updatePosition();
   }
