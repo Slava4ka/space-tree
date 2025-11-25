@@ -19,7 +19,9 @@ import {
   WORD_LABEL_CANVAS_WIDTH,
   WORD_LABEL_CANVAS_HEIGHT,
   WORD_LABEL_SCALE_MULTIPLIER,
-  WORD_LABEL_PLACEMENT_RADIUS
+  WORD_LABEL_PLACEMENT_RADIUS,
+  WORD_LABEL_FLOAT_AMPLITUDE,
+  WORD_LABEL_FLOAT_SPEED
 } from '../utils/constants.js';
 
 export class DetailModeSystem {
@@ -58,6 +60,8 @@ export class DetailModeSystem {
     this.detailModeExitButton = null;
     this.detailModeActorLabels = [];
     this.detailModeWordLabels = []; // Метки слов, созданные из светлячков
+    this.isAnimatingFirefliesToWords = false; // Флаг анимации превращения светлячков в слова
+    this.isAnimatingWordsToFireflies = false; // Флаг анимации превращения слов в светлячков
     this.detailModeOriginalStates = null;
     this.detailModeOriginalObjectStates = null;
     this.detailModeOriginalZoom = null;
@@ -1615,6 +1619,8 @@ export class DetailModeSystem {
       }
     });
     this.detailModeWordLabels = [];
+    this.isAnimatingFirefliesToWords = false; // Сбрасываем флаг анимации
+    this.isAnimatingWordsToFireflies = false; // Сбрасываем флаг обратной анимации
 
     // Удаляем лучи вокруг кольца
     if (this.ringRays) {
@@ -2100,6 +2106,7 @@ export class DetailModeSystem {
    * Светлячки исчезают, слова появляются и перемещаются к финальным позициям
    */
   animateFirefliesToWords() {
+    this.isAnimatingFirefliesToWords = true; // Устанавливаем флаг начала анимации
     const startTime = Date.now();
     const duration = 0.8 * 1000; // 0.8 секунды
 
@@ -2169,10 +2176,13 @@ export class DetailModeSystem {
             });
           }
           if (label.sprite) {
+            // Устанавливаем финальную позицию для начала анимации покачивания
             label.sprite.position.copy(label.targetPosition);
             label.sprite.material.opacity = 1;
           }
         });
+        // Анимация превращения завершена - можно начинать покачивание
+        this.isAnimatingFirefliesToWords = false;
       }
     };
 
@@ -2197,6 +2207,7 @@ export class DetailModeSystem {
    * Слова перемещаются к позициям светлячков и исчезают, светлячки появляются
    */
   animateWordsToFireflies() {
+    this.isAnimatingWordsToFireflies = true; // Устанавливаем флаг начала анимации
     const startTime = Date.now();
     const duration = 0.8 * 1000; // 0.8 секунды
 
@@ -2270,6 +2281,8 @@ export class DetailModeSystem {
             });
           }
         });
+        // Анимация обратного превращения завершена
+        this.isAnimatingWordsToFireflies = false;
       }
     };
 
@@ -2647,6 +2660,37 @@ export class DetailModeSystem {
     return sprite;
   }
   
+  /**
+   * Обновление анимации надписей слов (вызывается каждый кадр)
+   * Реализует легкое покачивание (floating) для надписей
+   */
+  updateWordLabels(deltaTime) {
+    if (!this.isDetailMode || !this.detailModeNode || this.detailModeWordLabels.length === 0) {
+      return;
+    }
+
+    // Не анимируем покачивание во время анимации превращения
+    if (this.isAnimatingFirefliesToWords || this.isAnimatingWordsToFireflies) {
+      return;
+    }
+
+    // Используем время для плавной анимации
+    const time = Date.now() * 0.001; // Время в секундах
+
+    this.detailModeWordLabels.forEach((label, index) => {
+      if (!label.sprite || !label.targetPosition) return;
+
+      // Легкое покачивание вверх-вниз
+      // Разные фазы для каждой надписи, чтобы они не двигались синхронно
+      const floatOffset = Math.sin(time * WORD_LABEL_FLOAT_SPEED + index * 0.5) * WORD_LABEL_FLOAT_AMPLITUDE;
+      
+      // Применяем анимацию к позиции (используем ось Y для вертикального покачивания)
+      const basePosition = label.targetPosition.clone();
+      basePosition.y += floatOffset;
+      label.sprite.position.copy(basePosition);
+    });
+  }
+
   /**
    * Обновить параметры
    */

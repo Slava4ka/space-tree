@@ -52,12 +52,10 @@ export const POINT_LIGHT_INTENSITY = 1;            // Интенсивность
 export const POINT_LIGHT_DISTANCE = 1000;          // Расстояние точечного света
 
 // ==================== Color константы ====================
-export const ROOT_NODE_COLOR = 0xffd700;           // Золотистый цвет корневого узла
 export const LEVEL_1_COLOR = 0x4a90e2;             // Синий для уровня 1 (сезоны)
 export const LEVEL_2_COLOR = 0x7b68ee;             // Фиолетовый для уровня 2 (режиссеры)
 export const LEVEL_3_COLOR = 0x20b2aa;            // Бирюзовый для уровня 3 (серии)
 export const DEFAULT_NODE_COLOR = 0x888888;        // Цвет по умолчанию для узлов
-export const NODE_MATERIAL_COLOR = 0xffffff;       // Цвет материала узла
 export const EDGE_LINE_COLOR = 0xffff00;          // Желтый цвет обводки (линий на планетах)
 export const EDGE_LINE_COLOR_WHITE = 0xffffff;      // Белый цвет обводки (для детального режима)
 export const TEXT_COLOR = '#ffffff';               // Цвет текста
@@ -83,6 +81,8 @@ export const WORD_LABEL_CANVAS_WIDTH = 400;        // Ширина canvas над
 export const WORD_LABEL_CANVAS_HEIGHT = 120;       // Высота canvas надписи
 export const WORD_LABEL_SCALE_MULTIPLIER = 1.2;    // Множитель масштаба надписей
 export const WORD_LABEL_PLACEMENT_RADIUS = 450;    // Радиус размещения надписей вокруг узла
+export const WORD_LABEL_FLOAT_AMPLITUDE = 20;      // Амплитуда покачивания надписей (в единицах)
+export const WORD_LABEL_FLOAT_SPEED = 0.8;         // Скорость покачивания надписей
 
 // Градиент свечения для светлячков
 export const GLOW_GRADIENT_COLORS = [

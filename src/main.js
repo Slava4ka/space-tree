@@ -554,6 +554,11 @@ class RadialTreeVisualization {
         // Обновляем анимации узлов
         this.nodeAnimation.update(deltaTime);
         
+        // Обновляем анимацию надписей слов в детальном режиме
+        if (this.detailModeSystem) {
+            this.detailModeSystem.updateWordLabels(deltaTime);
+        }
+        
         // Обновляем состояние NodeInteraction
         this.nodeInteraction.updateState({
             selectedNode: this.selectedNode,
