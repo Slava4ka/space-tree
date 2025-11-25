@@ -449,20 +449,29 @@ class RadialTreeVisualization {
     }
     
     updateCameraPosition() {
-        // В режиме детального просмотра не синхронизируем с CameraManager
-        if (!this.isDetailMode) {
+        // В режиме детального просмотра обновляем позицию камеры на основе зума
+        if (this.isDetailMode) {
+            // В режиме детализации камера смотрит на центр (0, 0, 0)
+            const baseDirection = new THREE.Vector3(0, 800, 1000).normalize();
+            const baseDistance = Math.sqrt(800 * 800 + 1000 * 1000);
+            const distance = baseDistance / this.currentZoom;
+            const offset = baseDirection.clone().multiplyScalar(distance);
+            
+            this.camera.position.copy(this.cameraTarget).add(offset);
+            this.camera.lookAt(this.cameraTarget);
+            this.camera.updateProjectionMatrix();
+        } else {
+            // Синхронизируем target и zoom с CameraManager
             this.cameraTarget = this.cameraManager.getTarget();
+            this.currentZoom = this.cameraManager.getZoom();
+            
+            // Используем позицию камеры напрямую из CameraManager
+            // CameraManager уже обновил позицию камеры через свой updatePosition()
+            const cameraManagerCamera = this.cameraManager.getCamera();
+            this.camera.position.copy(cameraManagerCamera.position);
+            this.camera.lookAt(this.cameraTarget);
+            this.camera.updateProjectionMatrix();
         }
-        
-        // Обновляем позицию камеры
-        const baseDirection = new THREE.Vector3(0, 800, 1000).normalize();
-        const baseDistance = Math.sqrt(800 * 800 + 1000 * 1000);
-        const distance = baseDistance / this.currentZoom;
-        const offset = baseDirection.clone().multiplyScalar(distance);
-        
-        this.camera.position.copy(this.cameraTarget).add(offset);
-        this.camera.lookAt(this.cameraTarget);
-        this.camera.updateProjectionMatrix();
     }
     
     updateCameraZoom() {
