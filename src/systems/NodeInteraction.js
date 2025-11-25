@@ -366,11 +366,10 @@ export class NodeInteraction {
      * Вход в режим детального просмотра
      */
     enterDetailMode(nodeData) {
-        // Сохраняем исходную позицию камеры для восстановления
-        if (!this.originalCameraPosition) {
-            this.originalCameraPosition = this.camera.position.clone();
-            this.originalCameraTarget = this.cameraTarget.clone();
-        }
+        // ВСЕГДА обновляем сохраненные значения, чтобы использовать актуальные
+        // Это важно, так как значения могут измениться после инициализации
+        this.originalCameraPosition = this.camera.position.clone();
+        this.originalCameraTarget = this.cameraTarget.clone();
         
         // Используем DetailModeSystem
         if (this.detailModeSystem) {
@@ -399,7 +398,14 @@ export class NodeInteraction {
     updateState(state) {
         if (state.selectedNode !== undefined) this.selectedNode = state.selectedNode;
         if (state.currentZoom !== undefined) this.currentZoom = state.currentZoom;
-        if (state.cameraTarget !== undefined) this.cameraTarget = state.cameraTarget;
+        if (state.cameraTarget !== undefined) {
+            // Правильно копируем Vector3
+            if (this.cameraTarget) {
+                this.cameraTarget.copy(state.cameraTarget);
+            } else {
+                this.cameraTarget = state.cameraTarget.clone();
+            }
+        }
         if (state.originalCameraPosition !== undefined) this.originalCameraPosition = state.originalCameraPosition;
         if (state.originalCameraTarget !== undefined) this.originalCameraTarget = state.originalCameraTarget;
     }

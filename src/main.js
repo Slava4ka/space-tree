@@ -215,7 +215,8 @@ class RadialTreeVisualization {
             DETAIL_MODE_SCREEN_SIZE_PERCENT: this.DETAIL_MODE_SCREEN_SIZE_PERCENT,
             initialCameraDistance: this.cameraManager.initialDistance,
             rootRadius: this.rootRadius,
-            nodeRadius: this.nodeRadius
+            nodeRadius: this.nodeRadius,
+            isAnimatingEnter: () => this.detailModeSystem ? this.detailModeSystem.isAnimatingEnterMode() : false
         });
         
         // Инициализация TreeRenderer
@@ -304,6 +305,22 @@ class RadialTreeVisualization {
         
         // Устанавливаем минимальный зум
         this.cameraManager.setMinZoom(minZoom);
+        
+        // ВАЖНО: Синхронизируем значения после изменения зума в CameraManager
+        // setMinZoom может изменить currentZoom, поэтому нужно обновить значения в main.js
+        this.currentZoom = this.cameraManager.getZoom();
+        this.cameraTarget = this.cameraManager.getTarget();
+        
+        // Обновляем позицию камеры
+        this.updateCameraPosition();
+        
+        // Обновляем значения в NodeInteraction
+        if (this.nodeInteraction) {
+            this.nodeInteraction.updateState({
+                currentZoom: this.currentZoom,
+                cameraTarget: this.cameraTarget
+            });
+        }
     }
     
     setupUIControls() {
@@ -471,6 +488,14 @@ class RadialTreeVisualization {
             this.camera.position.copy(cameraManagerCamera.position);
             this.camera.lookAt(this.cameraTarget);
             this.camera.updateProjectionMatrix();
+            
+            // Синхронизируем значения в NodeInteraction
+            if (this.nodeInteraction) {
+                this.nodeInteraction.updateState({
+                    currentZoom: this.currentZoom,
+                    cameraTarget: this.cameraTarget
+                });
+            }
         }
     }
     

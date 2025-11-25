@@ -60,6 +60,14 @@ export class DetailModeSystem {
     this.detailModeOriginalFireflyPositions = null;
     this.neonRingRotationY = 0; // Текущий угол поворота кольца в детальном режиме
     this.ringRays = null; // Лучи вокруг кольца для детального режима
+    this.isAnimatingEnter = false; // Флаг для отслеживания анимации входа
+  }
+
+  /**
+   * Проверить, идет ли анимация входа в детальный режим
+   */
+  isAnimatingEnterMode() {
+    return this.isAnimatingEnter;
   }
 
   /**
@@ -184,7 +192,10 @@ export class DetailModeSystem {
       this.updateNodeTextSpriteForDetailMode(nodeData);
     }
 
-    // Анимируем вход в режим
+    // Сначала скрываем все графы, кроме выбранного узла
+    this.hideAllGraphsExceptSelected(nodeData);
+
+    // Затем запускаем анимацию входа в режим
     this.animateEnter(currentZoom, originalCameraPosition, originalCameraTarget);
   }
 
@@ -398,12 +409,193 @@ export class DetailModeSystem {
   }
 
   /**
+   * Скрыть все графы, кроме выбранного узла
+   */
+  hideAllGraphsExceptSelected(nodeData) {
+    const selectedMesh = nodeData.mesh;
+    const selectedTextSprite = nodeData.textSprite;
+    const selectedNodeId = nodeData.node.id;
+    
+    // Находим treeGroup, содержащий выбранный узел
+      const selectedTreeGroup = this.treeGroups.find(group => {
+        let containsSelected = false;
+        group.traverse((obj) => {
+          if (obj === selectedMesh) {
+            containsSelected = true;
+          }
+        });
+        return containsSelected;
+      });
+      
+    // Скрываем все графы
+      this.treeGroups.forEach(treeGroup => {
+        if (treeGroup === selectedTreeGroup) {
+          // Внутри этого treeGroup скрываем только невыбранные объекты
+          treeGroup.traverse((object) => {
+          // Исключаем сам treeGroup из обработки
+          if (object === treeGroup) {
+            return;
+          }
+          
+          // Исключаем выбранный узел, его текст и все дочерние элементы
+          if (object === selectedMesh || object === selectedTextSprite) {
+            object.visible = true;
+            if (object.material) {
+              if (Array.isArray(object.material)) {
+                object.material.forEach(mat => {
+                  mat.opacity = 1;
+                  mat.transparent = false;
+                });
+              } else {
+                object.material.opacity = 1;
+                object.material.transparent = false;
+              }
+            }
+            return;
+          }
+          
+          // Исключаем неоновое кольцо выбранного узла и его дочерние элементы
+          if (object === nodeData.neonRing || object.parent === nodeData.neonRing) {
+            object.visible = true;
+            return;
+          }
+          
+          // Исключаем лучи вокруг кольца выбранного узла и его дочерние элементы
+          if (object === this.ringRays || object.parent === this.ringRays) {
+            object.visible = true;
+            return;
+          }
+          
+          // Проверяем, является ли объект светлячком выбранного узла
+          const isSelectedFirefly = this.fireflies.some(firefly => 
+            firefly.mesh === object && firefly.nodeId === selectedNodeId
+          );
+          if (isSelectedFirefly) {
+            return;
+          }
+          
+          // Проверяем, является ли объект дочерним элементом светлячка выбранного узла
+          let isChildOfSelectedFirefly = false;
+          let parentForFirefly = object.parent;
+          while (parentForFirefly) {
+            const isParentFirefly = this.fireflies.some(firefly => 
+              firefly.mesh === parentForFirefly && firefly.nodeId === selectedNodeId
+            );
+            if (isParentFirefly) {
+              isChildOfSelectedFirefly = true;
+              break;
+            }
+            parentForFirefly = parentForFirefly.parent;
+          }
+          
+          if (isChildOfSelectedFirefly) {
+            return;
+          }
+          
+          // Проверяем, является ли объект дочерним элементом выбранного узла
+          let isChildOfSelected = false;
+          let parent = object.parent;
+          while (parent) {
+            if (parent === selectedMesh) {
+              isChildOfSelected = true;
+              break;
+            }
+            parent = parent.parent;
+          }
+          
+          if (isChildOfSelected) {
+            return;
+          }
+          
+          // Скрываем все остальные объекты
+          object.visible = false;
+          
+          if (object.material) {
+            if (Array.isArray(object.material)) {
+              object.material.forEach(mat => {
+                mat.opacity = 0;
+                mat.transparent = true;
+              });
+            } else {
+              object.material.opacity = 0;
+              object.material.transparent = true;
+            }
+          }
+        });
+        } else {
+          // Для остальных treeGroup скрываем все объекты
+          treeGroup.traverse((object) => {
+            // Исключаем сам treeGroup из обработки
+            if (object === treeGroup) {
+              return;
+            }
+            
+          object.visible = false;
+            
+            if (object.material) {
+              if (Array.isArray(object.material)) {
+                object.material.forEach(mat => {
+                mat.opacity = 0;
+                  mat.transparent = true;
+                });
+              } else {
+              object.material.opacity = 0;
+                object.material.transparent = true;
+              }
+            }
+          });
+        }
+      });
+      
+    // Скрываем все светлячки, кроме выбранного узла
+    this.fireflies.forEach((firefly) => {
+      if (firefly.mesh && firefly.nodeId !== selectedNodeId) {
+        firefly.mesh.visible = false;
+        if (firefly.mesh.material) {
+          if (Array.isArray(firefly.mesh.material)) {
+            firefly.mesh.material.forEach(mat => {
+              mat.opacity = 0;
+              mat.transparent = true;
+            });
+          } else {
+            firefly.mesh.material.opacity = 0;
+            firefly.mesh.material.transparent = true;
+          }
+        }
+      }
+    });
+  }
+
+  /**
    * Анимация входа в режим
    */
   animateEnter(currentZoom, originalCameraPosition, originalCameraTarget) {
+    this.isAnimatingEnter = true; // Устанавливаем флаг начала анимации
     const startTime = Date.now();
     const duration = this.DETAIL_MODE_ANIMATION_TIME * 1000;
     const nodeData = this.detailModeNode;
+
+    // Сохраняем originalPosition и originalScale, если они еще не сохранены
+    if (!nodeData.originalPosition && nodeData.mesh) {
+      nodeData.originalPosition = nodeData.mesh.position.clone();
+    }
+    if (!nodeData.originalScale && nodeData.mesh) {
+      nodeData.originalScale = nodeData.mesh.scale.clone();
+    }
+    if (!nodeData.originalSpriteScale && nodeData.textSprite) {
+      nodeData.originalSpriteScale = nodeData.textSprite.scale.clone();
+    }
+
+    // Находим treeGroup, содержащий выбранный узел
+    const selectedTreeGroup = this.treeGroups.find(group => {
+      let containsSelected = false;
+      group.traverse((obj) => {
+        if (obj === nodeData.mesh) {
+          containsSelected = true;
+        }
+      });
+      return containsSelected;
+    });
 
     const animate = () => {
       const elapsed = Date.now() - startTime;
@@ -430,7 +622,7 @@ export class DetailModeSystem {
           selectedMesh.material.transparent = false;
         }
       }
-
+      
       // Показываем все дочерние элементы выбранного узла
       selectedMesh.traverse((child) => {
         child.visible = true;
@@ -528,142 +720,8 @@ export class DetailModeSystem {
         }
       });
       
-      // ВАЖНО: Убеждаемся, что treeGroup, содержащий выбранный узел, видим
-      const selectedTreeGroup = this.treeGroups.find(group => {
-        let containsSelected = false;
-        group.traverse((obj) => {
-          if (obj === selectedMesh) {
-            containsSelected = true;
-          }
-        });
-        return containsSelected;
-      });
-      if (selectedTreeGroup) {
-        selectedTreeGroup.visible = true;
-      }
-      
-      // Теперь скрываем остальные объекты
-      this.treeGroups.forEach(treeGroup => {
-        // Пропускаем treeGroup с выбранным узлом
-        if (treeGroup === selectedTreeGroup) {
-          // Внутри этого treeGroup скрываем только невыбранные объекты
-          treeGroup.traverse((object) => {
-          // Исключаем сам treeGroup из обработки
-          if (object === treeGroup) {
-            return;
-          }
-          
-          // Исключаем выбранный узел, его текст и все дочерние элементы
-          if (object === selectedMesh || object === selectedTextSprite) {
-            // Явно устанавливаем видимость и opacity для выбранного узла
-            object.visible = true;
-            if (object.material) {
-              if (Array.isArray(object.material)) {
-                object.material.forEach(mat => {
-                  mat.opacity = 1;
-                  mat.transparent = false;
-                });
-              } else {
-                object.material.opacity = 1;
-                object.material.transparent = false;
-              }
-            }
-            return;
-          }
-          // Исключаем неоновое кольцо выбранного узла и его дочерние элементы
-          if (object === nodeData.neonRing || object.parent === nodeData.neonRing) {
-            object.visible = true;
-            return;
-          }
-          // Исключаем лучи вокруг кольца выбранного узла и его дочерние элементы
-          if (object === this.ringRays || object.parent === this.ringRays) {
-            object.visible = true;
-            return;
-          }
-          
-          // Проверяем, является ли объект светлячком выбранного узла
-          const isSelectedFirefly = this.fireflies.some(firefly => 
-            firefly.mesh === object && firefly.nodeId === selectedNodeId
-          );
-          if (isSelectedFirefly) {
-            return;
-          }
-          
-          // Проверяем, является ли объект дочерним элементом светлячка выбранного узла
-          let isChildOfSelectedFirefly = false;
-          let parentForFirefly = object.parent;
-          while (parentForFirefly) {
-            const isParentFirefly = this.fireflies.some(firefly => 
-              firefly.mesh === parentForFirefly && firefly.nodeId === selectedNodeId
-            );
-            if (isParentFirefly) {
-              isChildOfSelectedFirefly = true;
-              break;
-            }
-            parentForFirefly = parentForFirefly.parent;
-          }
-          
-          if (isChildOfSelectedFirefly) {
-            return;
-          }
-          
-          // Проверяем, является ли объект дочерним элементом выбранного узла
-          let isChildOfSelected = false;
-          let parent = object.parent;
-          while (parent) {
-            if (parent === selectedMesh) {
-              isChildOfSelected = true;
-              break;
-            }
-            parent = parent.parent;
-          }
-          
-          if (isChildOfSelected) {
-            return;
-          }
-          
-          // Скрываем все остальные объекты
-          object.visible = easedProgress < 0.95;
-          
-          if (object.material) {
-            if (Array.isArray(object.material)) {
-              object.material.forEach(mat => {
-                mat.opacity = 1 - easedProgress;
-                mat.transparent = true;
-              });
-            } else {
-              object.material.opacity = 1 - easedProgress;
-              object.material.transparent = true;
-            }
-          }
-        });
-        } else {
-          // Для остальных treeGroup скрываем все объекты
-          treeGroup.traverse((object) => {
-            // Исключаем сам treeGroup из обработки
-            if (object === treeGroup) {
-              return;
-            }
-            
-            // Скрываем все объекты в других treeGroup
-            object.visible = easedProgress < 0.95;
-            
-            if (object.material) {
-              if (Array.isArray(object.material)) {
-                object.material.forEach(mat => {
-                  mat.opacity = 1 - easedProgress;
-                  mat.transparent = true;
-                });
-              } else {
-                object.material.opacity = 1 - easedProgress;
-                object.material.transparent = true;
-              }
-            }
-          });
-        }
-      });
-      
-      // Повторно устанавливаем видимость выбранного узла после traverse
+      // Графы уже скрыты в методе hideAllGraphsExceptSelected(), 
+      // поэтому здесь только анимируем выбранный узел
       selectedMesh.visible = true;
       if (selectedMesh.material) {
         if (Array.isArray(selectedMesh.material)) {
@@ -716,7 +774,7 @@ export class DetailModeSystem {
           child.visible = true;
         });
       }
-
+      
       // ВАЖНО: Повторно устанавливаем видимость selectedTreeGroup после всех операций
       if (selectedTreeGroup) {
         selectedTreeGroup.visible = true;
@@ -724,40 +782,62 @@ export class DetailModeSystem {
       
       // Увеличиваем и центрируем выбранный узел
       const targetScaleValue = this.calculateScale(nodeData);
-      const baseScale = nodeData.originalScale || new THREE.Vector3(1, 1, 1);
+      const baseScale = nodeData.originalScale || nodeData.mesh.scale.clone() || new THREE.Vector3(1, 1, 1);
       const targetScale = baseScale.clone().multiplyScalar(targetScaleValue);
+      // Используем lerp для плавной анимации масштаба
       const currentScale = baseScale.clone().lerp(targetScale, easedProgress);
       nodeData.mesh.scale.copy(currentScale);
 
       // Масштабируем текст узла
-      if (nodeData.textSprite && nodeData.originalSpriteScale) {
-        const targetSpriteScale = nodeData.originalSpriteScale.clone().multiplyScalar(targetScaleValue);
-        nodeData.textSprite.scale.lerp(targetSpriteScale, easedProgress);
+      if (nodeData.textSprite) {
+        const baseSpriteScale = nodeData.originalSpriteScale || nodeData.textSprite.scale.clone();
+        const targetSpriteScale = baseSpriteScale.clone().multiplyScalar(targetScaleValue);
+        // Используем lerp для плавной анимации масштаба текста
+        nodeData.textSprite.scale.copy(baseSpriteScale.clone().lerp(targetSpriteScale, easedProgress));
       }
 
       // Центрируем узел в сцене
       const targetPosition = new THREE.Vector3(0, 0, 0);
-      const originalPosition = nodeData.originalPosition || new THREE.Vector3(0, 0, 0);
-      nodeData.mesh.position.lerp(targetPosition, easedProgress);
+      const originalPosition = nodeData.originalPosition || nodeData.mesh.position.clone();
+      // Используем lerp для плавной анимации позиции
+      nodeData.mesh.position.copy(originalPosition.clone().lerp(targetPosition, easedProgress));
 
       // Вычисляем текущую позицию узла для обновления светлячков
       const currentNodePosition = originalPosition.clone().lerp(targetPosition, easedProgress);
 
       // Обновляем позиции и смещения радиусов орбит светлячков выбранного узла синхронно с перемещением узла
       const averageScale = (currentScale.x + currentScale.y + currentScale.z) / 3;
+      const nodeDataForFirefly = this.nodeMeshes.find(n => n.node.id === selectedNodeId);
+      const baseNodeRadius = nodeDataForFirefly ? (nodeDataForFirefly.node.level === 0 ? this.rootRadius : this.nodeRadius) : this.nodeRadius;
+      
       this.fireflies.forEach((firefly) => {
         if (firefly.mesh && firefly.nodeId === selectedNodeId) {
           const originalFireflyData = this.detailModeOriginalFireflyPositions.get(firefly);
           if (originalFireflyData) {
-            // В детальном режиме узел находится в центре (0, 0, 0)
-            // Поэтому nodePosition светлячка должен быть (0, 0, 0), а не обновляться на основе смещения узла
-            // Позиция светлячка будет вычисляться в NodeAnimation как (0, 0, 0) + orbitOffset
-            firefly.nodePosition = new THREE.Vector3(0, 0, 0);
+            // Обновляем nodePosition для светлячка (базовая позиция узла)
+            const targetFireflyPosition = new THREE.Vector3(0, 0, 0);
+            firefly.nodePosition = originalPosition.clone().lerp(targetFireflyPosition, easedProgress);
             
             // Обновляем смещение радиуса орбиты (оно будет использоваться в NodeAnimation)
             if (originalFireflyData.orbitRadiusOffset !== undefined) {
               firefly.orbitRadiusOffset = originalFireflyData.orbitRadiusOffset;
             }
+            
+            // Вычисляем текущий радиус орбиты с учетом масштаба узла
+            const offset = firefly.orbitRadiusOffset !== undefined ? firefly.orbitRadiusOffset : (firefly.originalOrbitRadius || 65);
+            const currentOrbitRadius = (baseNodeRadius * currentScale.x) + offset;
+            
+            // Вычисляем позицию на орбите относительно текущей позиции узла
+            const orbitX = Math.cos(firefly.angle) * currentOrbitRadius;
+            const orbitY = 0;
+            const orbitZ = Math.sin(firefly.angle) * currentOrbitRadius;
+            
+            // Устанавливаем позицию светлячка напрямую, чтобы перезаписать то, что делает NodeAnimation
+            firefly.mesh.position.set(
+              currentNodePosition.x + orbitX,
+              currentNodePosition.y + orbitY,
+              currentNodePosition.z + orbitZ
+            );
           }
         }
       });
@@ -806,7 +886,12 @@ export class DetailModeSystem {
       // Центрируем текст узла - добавляем дополнительное расстояние пропорционально масштабу
       // Центрируем и масштабируем неоновое кольцо вместе с узлом
       if (nodeData.neonRing) {
-        nodeData.neonRing.position.lerp(targetPosition, easedProgress);
+        // Сохраняем исходную позицию кольца, если еще не сохранена
+        if (!nodeData.neonRingOriginalPosition) {
+          nodeData.neonRingOriginalPosition = nodeData.neonRing.position.clone();
+        }
+        // Используем lerp для плавной анимации позиции кольца
+        nodeData.neonRing.position.copy(nodeData.neonRingOriginalPosition.clone().lerp(targetPosition, easedProgress));
         nodeData.neonRing.scale.copy(currentScale);
         nodeData.neonRing.scale.multiplyScalar(1.05);
         // Сохраняем угол поворота для применения в updateSphereRotations
@@ -859,6 +944,7 @@ export class DetailModeSystem {
         requestAnimationFrame(animate);
       } else {
         // Анимация завершена - показываем текст
+        this.isAnimatingEnter = false; // Сбрасываем флаг завершения анимации
         if (selectedTextSprite) {
           selectedTextSprite.visible = true;
         }
@@ -903,74 +989,82 @@ export class DetailModeSystem {
   animateNodeReturn() {
     const startTime = Date.now();
     const duration = this.DETAIL_MODE_ANIMATION_TIME * 1000;
+    const nodeData = this.detailModeNode;
+    const selectedMesh = nodeData.mesh;
+    
+    // СРАЗУ в начале анимации возврата делаем узел видимым
+    if (selectedMesh) {
+      selectedMesh.visible = true;
+      if (selectedMesh.material) {
+        if (Array.isArray(selectedMesh.material)) {
+          selectedMesh.material.forEach(mat => {
+            mat.opacity = 1.0;
+            mat.transparent = false;
+          });
+        } else {
+          selectedMesh.material.opacity = 1.0;
+          selectedMesh.material.transparent = false;
+        }
+      }
+      // Убеждаемся, что все дочерние элементы видны
+      selectedMesh.traverse((child) => {
+        if (child !== selectedMesh) {
+          child.visible = true;
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(mat => {
+                mat.opacity = 1.0;
+                mat.transparent = false;
+              });
+            } else {
+              child.material.opacity = 1.0;
+              child.material.transparent = false;
+            }
+          }
+        }
+      });
+    }
 
     const animate = () => {
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const easedProgress = this.easeInOut(progress);
 
-      const nodeData = this.detailModeNode;
-      const selectedMesh = nodeData.mesh;
       const selectedTextSprite = nodeData.textSprite;
       
-      // Восстанавливаем все деревья
-      this.treeGroups.forEach(treeGroup => {
-        treeGroup.traverse((object) => {
-          // Исключаем выбранный узел, его текст и все дочерние элементы
-          if (object === selectedMesh || object === selectedTextSprite) {
-            return;
-          }
-          
-          // Исключаем неоновое кольцо выбранного узла и его дочерние элементы
-          if (
-            object === nodeData.neonRing ||
-            object.parent === nodeData.neonRing
-          ) {
-            return;
-          }
-          // Проверяем, является ли объект дочерним элементом выбранного узла
-          let isChildOfSelected = false;
-          let parent = object.parent;
-          while (parent) {
-            if (parent === selectedMesh) {
-              isChildOfSelected = true;
-              break;
-            }
-            parent = parent.parent;
-          }
-          
-          if (isChildOfSelected) {
-            return;
-          }
-          
-          // Восстанавливаем видимость всех остальных объектов
-          object.visible = true;
-          
-          // Восстанавливаем opacity для остальных объектов
-          if (object.material) {
-            if (Array.isArray(object.material)) {
-              object.material.forEach(mat => {
-                mat.opacity = easedProgress;
-                mat.transparent = easedProgress < 1;
-              });
-            } else {
-              object.material.opacity = easedProgress;
-              object.material.transparent = easedProgress < 1;
-            }
+      // Находим treeGroup, содержащий выбранный узел
+      const selectedTreeGroup = this.treeGroups.find(group => {
+        let containsSelected = false;
+        group.traverse((obj) => {
+          if (obj === selectedMesh) {
+            containsSelected = true;
           }
         });
+        return containsSelected;
       });
       
-      // Явно устанавливаем видимость и opacity для выбранного узла
+      // СНАЧАЛА устанавливаем видимость для выбранного узла, чтобы он не был скрыт
+      // Убеждаемся, что treeGroup с выбранным узлом видим
+      if (selectedTreeGroup) {
+        selectedTreeGroup.visible = true;
+      }
+      
+      // Явно устанавливаем видимость для выбранного узла во время анимации
       selectedMesh.visible = true;
-      if (selectedTextSprite) {
-        selectedTextSprite.visible = true;
-        if (selectedTextSprite.material instanceof THREE.SpriteMaterial) {
-          selectedTextSprite.material.opacity = 1.0;
+      // Убеждаемся, что материал узла видим и непрозрачный
+      if (selectedMesh.material) {
+        if (Array.isArray(selectedMesh.material)) {
+          selectedMesh.material.forEach(mat => {
+            mat.opacity = 1.0;
+            mat.transparent = false;
+          });
+        } else {
+          selectedMesh.material.opacity = 1.0;
+          selectedMesh.material.transparent = false;
         }
       }
       
-      // Убеждаемся, что все дочерние элементы выбранного узла остаются видимыми
+      // Убеждаемся, что все дочерние элементы узла видны
       selectedMesh.traverse((child) => {
         if (child !== selectedMesh) {
           child.visible = true;
@@ -988,7 +1082,198 @@ export class DetailModeSystem {
         }
       });
       
-      // Убеждаемся, что материал выбранного узла остается видимым
+      if (selectedTextSprite) {
+        selectedTextSprite.visible = true;
+        if (selectedTextSprite.material) {
+          selectedTextSprite.material.opacity = 1.0;
+          selectedTextSprite.material.transparent = false;
+        }
+      }
+      
+      // Убеждаемся, что неоновое кольцо остается видимым
+      if (nodeData.neonRing) {
+        nodeData.neonRing.visible = true;
+        if (nodeData.neonRing.material) {
+          if (Array.isArray(nodeData.neonRing.material)) {
+            nodeData.neonRing.material.forEach(mat => {
+              mat.opacity = 1.0;
+              mat.transparent = false;
+            });
+          } else {
+            nodeData.neonRing.material.opacity = 1.0;
+            nodeData.neonRing.material.transparent = false;
+          }
+        }
+        nodeData.neonRing.traverse((child) => {
+          child.visible = true;
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(mat => {
+                mat.opacity = 1.0;
+                mat.transparent = false;
+              });
+            } else {
+              child.material.opacity = 1.0;
+              child.material.transparent = false;
+            }
+          }
+        });
+      }
+      
+      // Скрываем радиальные лучи сразу в начале анимации возврата
+      if (this.ringRays) {
+        this.ringRays.visible = false;
+      }
+      
+      // Во время анимации графы остаются скрытыми, показываем их под конец анимации (80% прогресса)
+      if (progress >= 0.8) {
+        // Вычисляем прогресс появления графов (от 0 до 1, когда progress от 0.8 до 1.0)
+        const graphAppearProgress = (progress - 0.8) / 0.2; // Нормализуем от 0.8 до 1.0 в диапазон 0-1
+        const graphOpacity = Math.min(graphAppearProgress, 1.0);
+        
+        // Восстанавливаем все деревья под конец анимации с плавным появлением
+        this.treeGroups.forEach(treeGroup => {
+          treeGroup.traverse((object) => {
+            // Исключаем выбранный узел, его текст и все дочерние элементы
+            if (object === selectedMesh || object === selectedTextSprite) {
+              return;
+            }
+            
+            // Исключаем неоновое кольцо выбранного узла и его дочерние элементы
+            if (
+              object === nodeData.neonRing ||
+              object.parent === nodeData.neonRing
+            ) {
+              return;
+            }
+            // Проверяем, является ли объект дочерним элементом выбранного узла
+            let isChildOfSelected = false;
+            let parent = object.parent;
+            while (parent) {
+              if (parent === selectedMesh) {
+                isChildOfSelected = true;
+                break;
+              }
+              parent = parent.parent;
+            }
+            
+            if (isChildOfSelected) {
+              return;
+            }
+            
+            // Восстанавливаем видимость всех остальных объектов
+            object.visible = true;
+            
+            // Плавно восстанавливаем opacity для остальных объектов
+            if (object.material) {
+              if (Array.isArray(object.material)) {
+                object.material.forEach(mat => {
+                  mat.opacity = graphOpacity;
+                  mat.transparent = graphOpacity < 1;
+                });
+              } else {
+                object.material.opacity = graphOpacity;
+                object.material.transparent = graphOpacity < 1;
+              }
+            }
+          });
+        });
+        
+        // Плавно восстанавливаем видимость всех светлячков
+        this.fireflies.forEach((firefly) => {
+          if (firefly.mesh) {
+            firefly.mesh.visible = true;
+            if (firefly.mesh.material) {
+              if (Array.isArray(firefly.mesh.material)) {
+                firefly.mesh.material.forEach(mat => {
+                  mat.opacity = graphOpacity;
+                  mat.transparent = graphOpacity < 1;
+                });
+              } else {
+                firefly.mesh.material.opacity = graphOpacity;
+                firefly.mesh.material.transparent = graphOpacity < 1;
+              }
+            }
+          }
+        });
+      } else {
+        // Во время анимации графы остаются скрытыми
+        this.treeGroups.forEach(treeGroup => {
+          treeGroup.traverse((object) => {
+            // Исключаем выбранный узел, его текст и все дочерние элементы
+            if (object === selectedMesh || object === selectedTextSprite) {
+              return;
+            }
+            
+            // Исключаем неоновое кольцо выбранного узла и его дочерние элементы
+            if (
+              object === nodeData.neonRing ||
+              object.parent === nodeData.neonRing
+            ) {
+              return;
+            }
+            // Проверяем, является ли объект дочерним элементом выбранного узла
+            let isChildOfSelected = false;
+            let parent = object.parent;
+            while (parent) {
+              if (parent === selectedMesh) {
+                isChildOfSelected = true;
+                break;
+              }
+              parent = parent.parent;
+            }
+            
+            if (isChildOfSelected) {
+              return;
+            }
+            
+            // Графы остаются скрытыми во время анимации
+            object.visible = false;
+            
+            if (object.material) {
+              if (Array.isArray(object.material)) {
+                object.material.forEach(mat => {
+                  mat.opacity = 0;
+                  mat.transparent = true;
+                });
+              } else {
+                object.material.opacity = 0;
+                object.material.transparent = true;
+              }
+            }
+          });
+        });
+        
+        // Светлячки также остаются скрытыми во время анимации
+        this.fireflies.forEach((firefly) => {
+          if (firefly.mesh && firefly.nodeId !== nodeData.node.id) {
+            firefly.mesh.visible = false;
+            if (firefly.mesh.material) {
+              if (Array.isArray(firefly.mesh.material)) {
+                firefly.mesh.material.forEach(mat => {
+                  mat.opacity = 0;
+                  mat.transparent = true;
+                });
+              } else {
+                firefly.mesh.material.opacity = 0;
+                firefly.mesh.material.transparent = true;
+              }
+            }
+          }
+        });
+      }
+      
+      // КРИТИЧЕСКИ ВАЖНО: Устанавливаем видимость узла ПОСЛЕ блока скрытия графов,
+      // чтобы гарантировать, что он не будет скрыт
+      // Убеждаемся, что все родительские элементы узла видимы
+      let parent = selectedMesh.parent;
+      while (parent && parent !== this.scene) {
+        parent.visible = true;
+        parent = parent.parent;
+      }
+      
+      // УБЕЖДАЕМСЯ, ЧТО УЗЕЛ ВИДЕН - устанавливаем видимость и материал КАЖДЫЙ КАДР
+      selectedMesh.visible = true;
       if (selectedMesh.material) {
         if (Array.isArray(selectedMesh.material)) {
           selectedMesh.material.forEach(mat => {
@@ -1000,19 +1285,95 @@ export class DetailModeSystem {
           selectedMesh.material.transparent = false;
         }
       }
-
-      // Убеждаемся, что неоновое кольцо остается видимым
+      
+      // Убеждаемся, что все дочерние элементы узла видны (включая shell, wireLines и т.д.)
+      selectedMesh.traverse((child) => {
+        if (child !== selectedMesh) {
+          child.visible = true;
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(mat => {
+                mat.opacity = 1.0;
+                mat.transparent = false;
+              });
+            } else {
+              child.material.opacity = 1.0;
+              child.material.transparent = false;
+            }
+          }
+        }
+      });
+      
+      // Убеждаемся, что неоновое кольцо видимо
       if (nodeData.neonRing) {
         nodeData.neonRing.visible = true;
+        if (nodeData.neonRing.material) {
+          if (Array.isArray(nodeData.neonRing.material)) {
+            nodeData.neonRing.material.forEach(mat => {
+              mat.opacity = 1.0;
+              mat.transparent = false;
+            });
+          } else {
+            nodeData.neonRing.material.opacity = 1.0;
+            nodeData.neonRing.material.transparent = false;
+          }
+        }
         nodeData.neonRing.traverse((child) => {
           child.visible = true;
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(mat => {
+                mat.opacity = 1.0;
+                mat.transparent = false;
+              });
+            } else {
+              child.material.opacity = 1.0;
+              child.material.transparent = false;
+            }
+          }
         });
       }
       
-      // В конце анимации (когда progress = 1) восстанавливаем исходные значения
+      // В конце анимации (когда progress = 1) восстанавливаем исходные значения и скрываем обводку
       if (progress >= 1) {
+        // Скрываем обводку (LineSegments) выбранного узла - она видна только в детальном режиме
+        selectedMesh.traverse((child) => {
+          if (child !== selectedMesh && child instanceof THREE.LineSegments && child.renderOrder === 200) {
+            child.visible = false;
+          }
+        });
+        
+        // Восстанавливаем материалы выбранного узла
+        const originalMeshState = this.detailModeOriginalObjectStates.get(selectedMesh);
+        if (originalMeshState) {
+          if (selectedMesh.material) {
+            if (Array.isArray(selectedMesh.material) && originalMeshState.materials) {
+              selectedMesh.material.forEach((mat, index) => {
+                if (originalMeshState.materials[index]) {
+                  mat.opacity = originalMeshState.materials[index].opacity;
+                  mat.transparent = originalMeshState.materials[index].transparent;
+                  mat.depthTest = originalMeshState.materials[index].depthTest;
+                  mat.depthWrite = originalMeshState.materials[index].depthWrite;
+                }
+              });
+            } else if (!Array.isArray(selectedMesh.material)) {
+              selectedMesh.material.opacity = originalMeshState.opacity;
+              selectedMesh.material.transparent = originalMeshState.transparent;
+              selectedMesh.material.depthTest = originalMeshState.depthTest;
+              selectedMesh.material.depthWrite = originalMeshState.depthWrite;
+            }
+          }
+        }
+        
+        // Восстанавливаем материалы всех объектов
         this.treeGroups.forEach(treeGroup => {
           treeGroup.traverse((object) => {
+            // Скрываем обводку (LineSegments) - она видна только в детальном режиме
+            if (object instanceof THREE.LineSegments && object.renderOrder === 200 && !object.userData?.isGlowShell) {
+              object.visible = false;
+              return;
+            }
+            
             object.visible = true;
             
             // Восстанавливаем исходные значения opacity и transparent
@@ -1035,7 +1396,7 @@ export class DetailModeSystem {
                   object.material.depthWrite = originalState.depthWrite;
                 }
               }
-
+              
               if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
                 object.material.opacity = originalState.opacity;
                 object.material.transparent = originalState.transparent;
@@ -1123,15 +1484,11 @@ export class DetailModeSystem {
         nodeData.textSprite.position.lerp(textPos, easedProgress);
       }
 
-      // Обновляем и скрываем лучи
+      // Лучи уже скрыты в начале анимации, просто обновляем их позицию для корректности
       if (this.ringRays) {
+        this.ringRays.visible = false; // Убеждаемся, что лучи скрыты
         this.ringRays.position.lerp(originalPosition, easedProgress);
         this.ringRays.scale.copy(currentScale);
-        // Анимируем исчезновение лучей
-        if (this.ringRays.material) {
-          this.ringRays.material.opacity =
-            this.ringRays.userData.targetOpacity * (1 - easedProgress);
-        }
       }
 
       // Скрываем оверлей
@@ -1211,6 +1568,12 @@ export class DetailModeSystem {
     // Восстанавливаем деревья - восстанавливаем исходные значения opacity и transparent
     this.treeGroups.forEach(treeGroup => {
       treeGroup.traverse((object) => {
+        // Скрываем обводку (LineSegments) - она видна только в детальном режиме
+        if (object instanceof THREE.LineSegments && object.userData && !object.userData.isGlowShell && object.renderOrder === 200) {
+          object.visible = false;
+          return;
+        }
+        
         object.visible = true;
         
         const originalState = this.detailModeOriginalObjectStates.get(object);
@@ -1221,17 +1584,23 @@ export class DetailModeSystem {
                 if (originalState.materials[index]) {
                   mat.opacity = originalState.materials[index].opacity;
                   mat.transparent = originalState.materials[index].transparent;
+                  mat.depthTest = originalState.materials[index].depthTest;
+                  mat.depthWrite = originalState.materials[index].depthWrite;
                 }
               });
             } else if (!Array.isArray(object.material)) {
               object.material.opacity = originalState.opacity;
               object.material.transparent = originalState.transparent;
+              object.material.depthTest = originalState.depthTest;
+              object.material.depthWrite = originalState.depthWrite;
             }
           }
           
           if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
             object.material.opacity = originalState.opacity;
             object.material.transparent = originalState.transparent;
+            object.material.depthTest = originalState.depthTest;
+            object.material.depthWrite = originalState.depthWrite;
             object.visible = true;
           }
         } else {
@@ -1785,7 +2154,7 @@ export class DetailModeSystem {
 
     return sprite;
   }
-
+  
   /**
    * Обновить параметры
    */

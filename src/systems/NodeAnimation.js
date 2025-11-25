@@ -20,6 +20,7 @@ export class NodeAnimation {
         this.initialCameraDistance = options.initialCameraDistance || 1280.6;
         this.rootRadius = options.rootRadius || ROOT_RADIUS;
         this.nodeRadius = options.nodeRadius || NODE_RADIUS;
+        this.isAnimatingEnter = options.isAnimatingEnter || (() => false);
     }
 
     /**
@@ -37,6 +38,18 @@ export class NodeAnimation {
      * Обновление позиций светлячков
      */
     updateFireflies() {
+        // Пропускаем обновление светлячков во время анимации входа в детальный режим
+        // Позиции светлячков обновляются напрямую в DetailModeSystem.animateEnter()
+        if (this.isAnimatingEnter && typeof this.isAnimatingEnter === 'function' && this.isAnimatingEnter()) {
+            // Обновляем только углы для вращения, но не позиции
+            this.fireflies.forEach((firefly) => {
+                if (firefly.mesh) {
+                    firefly.angle += firefly.speed * 0.01;
+                }
+            });
+            return;
+        }
+        
         this.fireflies.forEach((firefly, index) => {
             if (!firefly.mesh) return;
             

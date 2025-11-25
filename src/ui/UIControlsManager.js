@@ -350,7 +350,7 @@ export class UIControlsManager {
                 this.onRootRadiusChange(value);
             }, 300));
         }
-
+        
         // Слайдер для обычных узлов
         const nodeRadiusSlider = document.getElementById('node-radius');
         const nodeRadiusValue = document.getElementById('node-radius-value');
