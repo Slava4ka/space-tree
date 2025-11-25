@@ -150,6 +150,40 @@ export class DetailModeSystem {
     // Создаем лучи вокруг кольца
     this.createRingRays(nodeData);
 
+    // Устанавливаем правильный renderOrder для всех элементов узла
+    if (nodeData.mesh) {
+      nodeData.mesh.renderOrder = 100; // Основной узел
+      nodeData.mesh.traverse((child) => {
+        // Устанавливаем renderOrder для всех дочерних элементов (все меньше 999 для текста)
+        if (child instanceof THREE.LineSegments) {
+          child.renderOrder = 200; // Обводки
+        } else if (child instanceof THREE.Mesh) {
+          if (child.renderOrder === undefined || child.renderOrder >= 999) {
+            child.renderOrder = 100; // Основные элементы узла
+          }
+        } else {
+          if (child.renderOrder === undefined || child.renderOrder >= 999) {
+            child.renderOrder = 100;
+          }
+        }
+      });
+    }
+
+    // Устанавливаем renderOrder для неонового кольца
+    if (nodeData.neonRing) {
+      nodeData.neonRing.renderOrder = 200; // Кольцо выше узла, но ниже текста
+      nodeData.neonRing.traverse((child) => {
+        if (child.renderOrder === undefined || child.renderOrder >= 999) {
+          child.renderOrder = 200; // Дочерние элементы кольца ниже текста
+        }
+      });
+    }
+
+    // Перерисовываем текст с увеличенным разрешением для четкости в детальном режиме
+    if (nodeData.textSprite) {
+      this.updateNodeTextSpriteForDetailMode(nodeData);
+    }
+
     // Анимируем вход в режим
     this.animateEnter(currentZoom, originalCameraPosition, originalCameraTarget);
   }
@@ -354,6 +388,7 @@ export class DetailModeSystem {
     });
 
     const rays = new THREE.LineSegments(rayGeometry, rayMaterial);
+    rays.renderOrder = 200; // Лучи кольца выше узла, но ниже текста
     rays.position.copy(ring.position);
     rays.userData.targetOpacity = rayOpacity;
     rays.userData.isRingRays = true;
@@ -399,27 +434,46 @@ export class DetailModeSystem {
       // Показываем все дочерние элементы выбранного узла
       selectedMesh.traverse((child) => {
         child.visible = true;
-        // Устанавливаем правильный renderOrder для дочерних элементов
+        // Устанавливаем правильный renderOrder для дочерних элементов (все меньше 999 для текста)
         if (child instanceof THREE.LineSegments) {
           child.renderOrder = 200; // Обводки
         } else if (child.userData && child.userData.fireflyInstance) {
           child.renderOrder = 300; // Светлячки
+        } else if (child instanceof THREE.Mesh) {
+          // Для всех остальных мешей (включая shell) устанавливаем renderOrder меньше текста
+          if (child.renderOrder === undefined || child.renderOrder >= 999) {
+            child.renderOrder = 100; // Основные элементы узла
+          }
+        } else {
+          // Для всех остальных элементов устанавливаем renderOrder меньше текста
+          if (child.renderOrder === undefined || child.renderOrder >= 999) {
+            child.renderOrder = 100;
+          }
         }
         if (child.material) {
           if (Array.isArray(child.material)) {
             child.material.forEach(mat => {
               mat.opacity = 1;
               mat.transparent = false;
+              // Убеждаемся, что материалы дочерних элементов не перекрывают текст
+              if (mat.depthTest !== undefined) {
+                mat.depthTest = true; // Включаем depth test для дочерних элементов
+              }
             });
           } else {
             child.material.opacity = 1;
             child.material.transparent = false;
+            // Убеждаемся, что материалы дочерних элементов не перекрывают текст
+            if (child.material.depthTest !== undefined) {
+              child.material.depthTest = true; // Включаем depth test для дочерних элементов
+            }
           }
         }
       });
 
+      // Скрываем текст во время анимации, показываем только после завершения
       if (selectedTextSprite) {
-        selectedTextSprite.visible = true;
+        selectedTextSprite.visible = progress >= 1; // Показываем только после завершения анимации
         selectedTextSprite.renderOrder = 999; // Убеждаемся, что renderOrder правильный для текста
         if (selectedTextSprite.material) {
           if (Array.isArray(selectedTextSprite.material)) {
@@ -440,8 +494,16 @@ export class DetailModeSystem {
       // Показываем неоновое кольцо выбранного узла
       if (nodeData.neonRing) {
           nodeData.neonRing.visible = true;
+          // Устанавливаем renderOrder для кольца и его дочерних элементов
+          if (nodeData.neonRing.renderOrder === undefined || nodeData.neonRing.renderOrder >= 999) {
+            nodeData.neonRing.renderOrder = 200; // Кольцо выше узла, но ниже текста
+          }
           nodeData.neonRing.traverse((child) => {
-          child.visible = true;
+            child.visible = true;
+            // Устанавливаем renderOrder для дочерних элементов кольца
+            if (child.renderOrder === undefined || child.renderOrder >= 999) {
+              child.renderOrder = 200; // Дочерние элементы кольца ниже текста
+            }
           });
       }
       
@@ -615,8 +677,9 @@ export class DetailModeSystem {
         }
       }
       
+      // Скрываем текст во время анимации, показываем только после завершения
       if (selectedTextSprite) {
-        selectedTextSprite.visible = true;
+        selectedTextSprite.visible = progress >= 1; // Показываем только после завершения анимации
         if (selectedTextSprite.material) {
           if (Array.isArray(selectedTextSprite.material)) {
             selectedTextSprite.material.forEach(mat => {
@@ -795,7 +858,10 @@ export class DetailModeSystem {
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        // Анимация завершена
+        // Анимация завершена - показываем текст
+        if (selectedTextSprite) {
+          selectedTextSprite.visible = true;
+        }
         if (this.detailModeActorLabels.length === 0) {
           this.createActorLabels();
         }
@@ -1533,8 +1599,107 @@ export class DetailModeSystem {
       nodeData.textSprite.material.map = texture;
       nodeData.textSprite.material.needsUpdate = true;
 
+      // Устанавливаем настройки для отображения поверх всех объектов
+      nodeData.textSprite.renderOrder = 999;
+      nodeData.textSprite.material.depthTest = false;
+      nodeData.textSprite.material.depthWrite = false;
+
       // Рассчитываем новый масштаб
       nodeData.textSprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
+    }
+  }
+
+  /**
+   * Обновить текст спрайт для узла в режиме детализации с увеличенным разрешением
+   */
+  updateNodeTextSpriteForDetailMode(nodeData) {
+    const node = nodeData.node;
+    const isRoot = node.level === 0;
+    const fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+    const lineHeight = fontSize * 1.2; // Межстрочный интервал
+
+    // Увеличиваем масштаб для детального режима (в 2 раза больше для четкости)
+    const detailScaleFactor = TEXT_SCALE_FACTOR * 2;
+
+    // Создаем новую текстуру
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    context.font = `bold ${fontSize}px Arial`;
+
+    // Разбиваем текст на строки
+    const lines = this.splitTextIntoLines(node.text, this.maxWordsPerLine);
+
+    // Измеряем ширину каждой строки и находим максимальную
+    let maxTextWidth = 0;
+    const lineWidths = [];
+    lines.forEach(line => {
+      const metrics = context.measureText(line);
+      const width = metrics.width;
+      lineWidths.push(width);
+      if (width > maxTextWidth) {
+        maxTextWidth = width;
+      }
+    });
+
+    // Рассчитываем размеры canvas
+    const textWidth = maxTextWidth;
+    const textHeight = lines.length * lineHeight - (lineHeight - fontSize); // Высота с учетом межстрочного интервала
+
+    // Увеличиваем разрешение canvas для четкости при масштабировании в детальном режиме
+    canvas.width = (textWidth + TEXT_PADDING) * detailScaleFactor;
+    canvas.height = (textHeight + TEXT_PADDING) * detailScaleFactor;
+
+    // Масштабируем контекст
+    context.scale(detailScaleFactor, detailScaleFactor);
+
+    // Перерисовываем текст
+    context.fillStyle = TEXT_COLOR;
+    context.strokeStyle = TEXT_STROKE_COLOR;
+    context.lineWidth = TEXT_STROKE_WIDTH;
+    context.font = `bold ${fontSize}px Arial`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle'; // Центрируем по вертикали
+
+    // Рисуем каждую строку с правильным вертикальным смещением
+    const centerX = (textWidth + TEXT_PADDING) / 2;
+    const canvasCenterY = (textHeight + TEXT_PADDING) / 2; // Центр canvas по вертикали
+
+    // Рассчитываем начальную позицию Y для первой строки
+    // Чтобы весь текст был центрирован, первая строка должна быть выше центра
+    const totalTextHeight = lines.length * lineHeight - (lineHeight - fontSize);
+    const startY = canvasCenterY - (totalTextHeight / 2) + (fontSize / 2);
+
+    lines.forEach((line, index) => {
+      const y = startY + index * lineHeight;
+      // Рисуем текст с обводкой
+      context.strokeText(line, centerX, y);
+      context.fillText(line, centerX, y);
+    });
+
+    // Создаем текстуру из canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    // Обновляем существующий спрайт
+    if (nodeData.textSprite) {
+      // Освобождаем старую текстуру
+      if (nodeData.textSprite.material.map) {
+        nodeData.textSprite.material.map.dispose();
+      }
+
+      // Устанавливаем новую текстуру
+      nodeData.textSprite.material.map = texture;
+      nodeData.textSprite.material.needsUpdate = true;
+
+      // Устанавливаем настройки для отображения поверх всех объектов
+      nodeData.textSprite.renderOrder = 999;
+      nodeData.textSprite.material.depthTest = false;
+      nodeData.textSprite.material.depthWrite = false;
+
+      // Рассчитываем новый масштаб с учетом увеличенного разрешения
+      // Масштаб спрайта должен быть таким же, как и раньше, но текстура имеет большее разрешение
+      nodeData.textSprite.scale.set((canvas.width / detailScaleFactor) * 1.5, (canvas.height / detailScaleFactor) * 1.5, 1);
     }
   }
 
@@ -1606,7 +1771,9 @@ export class DetailModeSystem {
     const spriteMaterial = new THREE.SpriteMaterial({
       map: texture,
       transparent: true,
-      alphaTest: 0.1
+      alphaTest: 0.1,
+      depthTest: false, // Отключаем depth test для отображения поверх всех объектов
+      depthWrite: false // Отключаем depth write для отображения поверх всех объектов
     });
     const sprite = new THREE.Sprite(spriteMaterial);
 

@@ -503,6 +503,7 @@ export class TreeRenderer {
         // Помечаем материал сетки как всегда прозрачный
         wireMaterial.userData.alwaysTransparent = true;
         const wireLines = new THREE.LineSegments(wireframe, wireMaterial);
+        wireLines.renderOrder = 200; // Обводки выше узлов, но ниже текста
         sphere.add(wireLines); // Добавляем к сфере, чтобы вращалась вместе с ней
         wireframeGeometry.dispose();
 
@@ -514,6 +515,7 @@ export class TreeRenderer {
             SPHERE_RINGS
         );
         const shell = new THREE.Mesh(shellGeometry, shellMaterial);
+        shell.renderOrder = 100; // Оболочка на том же уровне, что и узел, но ниже текста
         shell.userData.rotationSpeed = sphere.userData.rotationSpeed * 0.7;
         shell.userData.isGlowShell = true; // Метка для игнорирования в raycasting
         sphere.add(shell);
@@ -532,6 +534,7 @@ export class TreeRenderer {
             opacity: 0.8,
         });
         const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.renderOrder = 200; // Кольцо выше узла, но ниже текста
         ring.position.copy(node.position); // Позиция узла
         ring.userData.isNeonRing = true;
         ring.userData.nodePosition = node.position.clone(); // Сохраняем для обновления
@@ -679,7 +682,9 @@ export class TreeRenderer {
         const spriteMaterial = new THREE.SpriteMaterial({
             map: texture,
             transparent: true,
-            alphaTest: 0.1
+            alphaTest: 0.1,
+            depthTest: false, // Отключаем depth test для отображения поверх всех объектов
+            depthWrite: false // Отключаем depth write для отображения поверх всех объектов
         });
         const sprite = new THREE.Sprite(spriteMaterial);
         
@@ -911,6 +916,11 @@ export class TreeRenderer {
             // Устанавливаем новую текстуру
             nodeData.textSprite.material.map = texture;
             nodeData.textSprite.material.needsUpdate = true;
+
+            // Устанавливаем настройки для отображения поверх всех объектов
+            nodeData.textSprite.renderOrder = 999;
+            nodeData.textSprite.material.depthTest = false;
+            nodeData.textSprite.material.depthWrite = false;
 
             // Рассчитываем новый масштаб
             nodeData.textSprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
