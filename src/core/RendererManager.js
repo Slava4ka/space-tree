@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isMobileDevice } from '../utils/DeviceUtils.js';
 
 /**
  * Менеджер рендерера
@@ -22,7 +23,10 @@ export class RendererManager {
 
     // Ограничиваем pixelRatio для производительности на мобильных устройствах
     // На устройствах с высоким DPI (iPhone, iPad) это значительно снижает нагрузку
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    // Мобильные: 1.5 для баланса производительности и качества
+    // Десктопы: 2.0 для лучшего качества изображения
+    const maxPixelRatio = isMobileDevice() ? 1.5 : 2.0;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     this.resize(window.innerWidth, window.innerHeight);
   }
 

@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { TextureGenerator } from '../utils/TextureGenerator.js';
 import { mockData } from '../mockData.js';
+import { isMobileDevice } from '../utils/DeviceUtils.js';
 import {
   ROOT_RADIUS,
   NODE_RADIUS,
@@ -316,7 +317,7 @@ export class DetailModeSystem {
     button.className = 'zoom-btn detail-exit-btn';
     
     // Определяем мобильное устройство
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isMobile = isMobileDevice();
     
     // Устанавливаем стили с учетом типа устройства
     button.style.position = 'fixed';
@@ -1882,12 +1883,15 @@ export class DetailModeSystem {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
 
-    const fontSize = WORD_LABEL_FONT_SIZE; // Одинаковый размер для всех надписей
+    // Определяем мобильное устройство для уменьшения размера шрифта
+    const isMobile = isMobileDevice();
+    const fontSize = isMobile ? WORD_LABEL_FONT_SIZE * 0.7 : WORD_LABEL_FONT_SIZE; // Уменьшенный размер для мобильных (70% от оригинала)
     const lineHeight = fontSize * 1.2; // Межстрочный интервал
     context.font = `bold ${fontSize}px Arial`;
 
-    // Разбиваем текст на строки (максимум 2 слова в строке)
-    const lines = this.splitTextIntoLines(text, 2);
+    // Разбиваем текст на строки (максимум 1 слово в строке на мобильных, 2 на десктопе)
+    const maxWordsPerLine = isMobile ? 1 : 2;
+    const lines = this.splitTextIntoLines(text, maxWordsPerLine);
 
     // Измеряем ширину каждой строки и находим максимальную
     let maxTextWidth = 0;
@@ -2036,8 +2040,12 @@ export class DetailModeSystem {
     
     // Находим оптимальные радиусы методом подбора
     // Ограничиваем максимальный радиус, чтобы блоки не выходили за экран
-    const maxRadiusX = WORD_LABEL_PLACEMENT_RADIUS * 3.2; // Максимальный горизонтальный радиус
-    const maxRadiusY = WORD_LABEL_PLACEMENT_RADIUS * 2.7; // Максимальный вертикальный радиус
+    // Определяем мобильное устройство для уменьшения радиуса
+    const isMobile = isMobileDevice();
+    const radiusMultiplierX = isMobile ? 1.2 : 3.2; // Уменьшенный коэффициент для мобильных
+    const radiusMultiplierY = isMobile ? 1.7 : 2.7; // Уменьшенный коэффициент для мобильных
+    const maxRadiusX = WORD_LABEL_PLACEMENT_RADIUS * radiusMultiplierX; // Максимальный горизонтальный радиус
+    const maxRadiusY = WORD_LABEL_PLACEMENT_RADIUS * radiusMultiplierY; // Максимальный вертикальный радиус
     
     let ellipseRadiusX = Math.min(
       maxRadiusX,

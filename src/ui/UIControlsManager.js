@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { debounce } from 'lodash';
 import { FIREFLY_CORE_SIZE_MULTIPLIER, SPHERE_SEGMENTS, SPHERE_RINGS } from '../utils/constants.js';
+import { isMobileDevice } from '../utils/DeviceUtils.js';
 
 /**
  * Класс для управления UI контролами (зум, layout слайдеры)
@@ -172,7 +173,7 @@ export class UIControlsManager {
         
         if (layoutToggle && layoutControls) {
             // На мобильных сворачиваем панель по умолчанию
-            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            const isMobile = isMobileDevice();
             if (isMobile) {
                 layoutControls.classList.add('collapsed');
                 layoutToggle.textContent = '+';
