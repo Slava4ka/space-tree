@@ -7,6 +7,7 @@ import {
     ROOT_TEXT_SIZE,
     NODE_TEXT_SIZE,
     DEFAULT_NODE_COLOR,
+    ROOT_COLOR,
     LEVEL_1_COLOR,
     LEVEL_2_COLOR,
     LEVEL_3_COLOR,
@@ -494,7 +495,7 @@ export class TreeRenderer {
      * @param {number} glowColor - Цвет свечения в hex формате
      * @param {boolean} isRoot - Является ли оболочка для корневого узла
      */
-    createGlowShellMaterial(glowColor = 0x88ccff, isRoot = false) {
+    createGlowShellMaterial(glowColor = LEVEL_1_COLOR, isRoot = false) {
         const cacheKey = isRoot ? 'rootGlowShell' : 'regularGlowShell';
         
         // Используем кэш, если материал уже создан
@@ -536,13 +537,14 @@ export class TreeRenderer {
             return this.materialCache.rootNode;
         }
         
-        // Создаем новый материал
+        // Создаем новый материал с цветом для root узлов
+        const rootColor = ROOT_COLOR; // Используем специальный цвет для root узлов
         const material = new THREE.MeshStandardMaterial({
-            color: 0xff00ff, // Яркий неоновый пурпурный
-            emissive: 0xff00ff, // Яркий неоновый пурпурный для свечения
-            emissiveIntensity: 2.0, // Очень высокая интенсивность для максимального неонового эффекта
-            metalness: 0.1,
-            roughness: 0.05, // Очень низкая шероховатость для глянцевого эффекта
+            color: rootColor,
+            emissive: rootColor,
+            emissiveIntensity: 0.6, // Та же интенсивность, что и у дочерних узлов
+            metalness: 0.2,
+            roughness: 0.3,
             transparent: false,
         });
         
@@ -680,9 +682,9 @@ export class TreeRenderer {
         } else {
             // Обычные узлы - цвет зависит от уровня
             const levelColors = [
-                LEVEL_1_COLOR, // Синий для уровня 1
-                LEVEL_2_COLOR, // Фиолетовый для уровня 2
-                LEVEL_3_COLOR, // Бирюзовый для уровня 3
+                LEVEL_1_COLOR, // Голубой для уровня 1
+                LEVEL_2_COLOR, // Синий для уровня 2
+                LEVEL_3_COLOR, // Светло-голубой для уровня 3
             ];
             const levelColor = levelColors[node.level - 1] || DEFAULT_NODE_COLOR;
             material = new THREE.MeshStandardMaterial({
@@ -745,10 +747,10 @@ export class TreeRenderer {
         sphere.add(wireLines); // Добавляем к сфере, чтобы вращалась вместе с ней
 
         // Создаем светящуюся оболочку как child
-        // Для корневых узлов используем специальную оболочку с фиолетовым свечением
+        // Для корневых узлов используем специальный цвет root узлов
         const shellMaterial = isRoot 
-            ? this.createGlowShellMaterial(0xff00ff, true) 
-            : this.createGlowShellMaterial(0x88ccff, false);
+            ? this.createGlowShellMaterial(ROOT_COLOR, true) 
+            : this.createGlowShellMaterial(LEVEL_1_COLOR, false);
         const shellGeometry = new THREE.SphereGeometry(
             radius * 1.15,
             SPHERE_SEGMENTS,
@@ -768,8 +770,9 @@ export class TreeRenderer {
             16,
             64
         );
+        const ringColor = isRoot ? ROOT_COLOR : LEVEL_1_COLOR;
         const ringMaterial = new THREE.MeshBasicMaterial({
-            color: 0x88ccff,
+            color: ringColor,
             transparent: true,
             opacity: 0.8,
         });
@@ -788,7 +791,7 @@ export class TreeRenderer {
             64
         );
         const ringGlowMaterial = new THREE.MeshBasicMaterial({
-            color: 0x88ccff,
+            color: ringColor,
             transparent: true,
             opacity: 0.4,
         });

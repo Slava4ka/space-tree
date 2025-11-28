@@ -42,21 +42,22 @@ export const DETAIL_MODE_ACTOR_RADIUS = 400;        // Радиус распол
 export const ANIMATION_SPEED = 0.05;               // Скорость анимации (lerp factor)
 
 // ==================== Lighting константы ====================
-export const AMBIENT_LIGHT_COLOR = 0x404040;       // Цвет окружающего света
+export const AMBIENT_LIGHT_COLOR = 0x57fafd;       // Голубоватый цвет окружающего света (как на картинке)
 export const AMBIENT_LIGHT_INTENSITY = 0.6;        // Интенсивность окружающего света
-export const DIRECTIONAL_LIGHT_COLOR = 0xffffff;   // Цвет направленного света
+export const DIRECTIONAL_LIGHT_COLOR = 0xaaccff;   // Голубоватый цвет направленного света
 export const DIRECTIONAL_LIGHT_INTENSITY = 0.8;     // Интенсивность направленного света
 export const DIRECTIONAL_LIGHT_POSITION = { x: 200, y: 200, z: 200 }; // Позиция направленного света
-export const POINT_LIGHT_COLOR = 0xffa500;         // Цвет точечного света
+export const POINT_LIGHT_COLOR = 0x5cb3ff;         // Голубой цвет точечного света (как на картинке)
 export const POINT_LIGHT_INTENSITY = 1;            // Интенсивность точечного света
 export const POINT_LIGHT_DISTANCE = 1000;          // Расстояние точечного света
 
 // ==================== Color константы ====================
-export const LEVEL_1_COLOR = 0x4a90e2;             // Синий для уровня 1 (сезоны)
-export const LEVEL_2_COLOR = 0x7b68ee;             // Фиолетовый для уровня 2 (режиссеры)
-export const LEVEL_3_COLOR = 0x20b2aa;            // Бирюзовый для уровня 3 (серии)
-export const DEFAULT_NODE_COLOR = 0x888888;        // Цвет по умолчанию для узлов
-export const EDGE_LINE_COLOR = 0xffff00;          // Желтый цвет обводки (линий на планетах)
+export const ROOT_COLOR = 0x1461f5;                // Синий цвет для root узлов
+export const LEVEL_1_COLOR = 0x5cb3ff;             // Голубой для уровня 1 (дочерние узлы)
+export const LEVEL_2_COLOR = 0x4a90e2;             // Синий для уровня 2 (более темный голубой)
+export const LEVEL_3_COLOR = 0x6bb6ff;             // Светло-голубой для уровня 3
+export const DEFAULT_NODE_COLOR = 0x5cb3ff;        // Голубой цвет по умолчанию для узлов
+export const EDGE_LINE_COLOR = 0x88ccff;          // Голубой цвет обводки (линий на планетах)
 export const EDGE_LINE_COLOR_WHITE = 0xffffff;      // Белый цвет обводки (для детального режима)
 export const TEXT_COLOR = '#ffffff';               // Цвет текста
 export const TEXT_STROKE_COLOR = '#000000';        // Цвет обводки текста
