@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ROOT_RADIUS, NODE_RADIUS } from '../utils/constants.js';
+import { ROOT_RADIUS, NODE_RADIUS, TEXT_OFFSET_Y } from '../utils/constants.js';
 
 /**
  * Класс для управления анимациями узлов
@@ -226,7 +226,7 @@ export class NodeAnimation {
                     // Обновляем позицию спрайта в локальных координатах
                     nodeData.textSprite.position.set(
                         localPos.x,
-                        localPos.y + nodeRadius + 90,
+                        localPos.y + nodeRadius + TEXT_OFFSET_Y,
                         localPos.z
                     );
 
@@ -247,7 +247,7 @@ export class NodeAnimation {
                         const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * nodeData.mesh.scale.y;
                         nodeData.textSprite.position.set(
                             nodeData.mesh.position.x,
-                            nodeData.mesh.position.y + nodeRadius + 90,
+                            nodeData.mesh.position.y + nodeRadius + TEXT_OFFSET_Y,
                             nodeData.mesh.position.z
                         );
                         // Принудительно обновляем матрицу спрайта и его родителя
@@ -274,7 +274,7 @@ export class NodeAnimation {
                 // Обновляем позицию спрайта, чтобы она точно соответствовала позиции узла
                 nodeData.textSprite.position.set(
                     nodeData.mesh.position.x,
-                    nodeData.mesh.position.y + nodeRadius + 90,
+                    nodeData.mesh.position.y + nodeRadius + TEXT_OFFSET_Y,
                     nodeData.mesh.position.z
                 );
                 // Принудительно обновляем матрицу спрайта для корректного отображения

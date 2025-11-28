@@ -16,6 +16,7 @@ import {
     TEXT_STROKE_WIDTH,
     TEXT_SCALE_FACTOR,
     TEXT_PADDING,
+    TEXT_OFFSET_Y,
     SPHERE_SEGMENTS,
     SPHERE_RINGS,
     CAMERA_MIN_ZOOM,
@@ -948,7 +949,7 @@ export class TreeRenderer {
         
         // Позиционируем текст над сферой
         sprite.position.copy(node.position);
-        sprite.position.y += radius + 90;
+        sprite.position.y += radius + TEXT_OFFSET_Y;
         sprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
         sprite.renderOrder = 999; // Текст всегда поверх всех элементов
         

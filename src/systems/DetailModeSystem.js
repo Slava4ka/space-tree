@@ -16,6 +16,7 @@ import {
   TEXT_STROKE_WIDTH,
   TEXT_SCALE_FACTOR,
   TEXT_PADDING,
+  TEXT_OFFSET_Y,
   WORD_LABEL_FONT_SIZE,
   WORD_LABEL_CANVAS_WIDTH,
   WORD_LABEL_CANVAS_HEIGHT,
@@ -706,15 +707,17 @@ export class DetailModeSystem {
           if (Array.isArray(selectedTextSprite.material)) {
             selectedTextSprite.material.forEach(mat => {
               mat.opacity = 1;
-              mat.transparent = false;
+              mat.transparent = true; // Включаем прозрачность для правильного отображения поверх узлов
               mat.depthTest = false; // Отключаем depth test для текста в режиме детализации
               mat.depthWrite = false;
+              mat.alphaTest = 0.1;
             });
           } else {
             selectedTextSprite.material.opacity = 1;
-            selectedTextSprite.material.transparent = false;
+            selectedTextSprite.material.transparent = true; // Включаем прозрачность для правильного отображения поверх узлов
             selectedTextSprite.material.depthTest = false; // Отключаем depth test для текста в режиме детализации
             selectedTextSprite.material.depthWrite = false;
+            selectedTextSprite.material.alphaTest = 0.1;
           }
         }
       }
@@ -777,11 +780,17 @@ export class DetailModeSystem {
           if (Array.isArray(selectedTextSprite.material)) {
             selectedTextSprite.material.forEach(mat => {
               mat.opacity = 1;
-              mat.transparent = false;
+              mat.transparent = true; // Включаем прозрачность для правильного отображения поверх узлов
+              mat.depthTest = false;
+              mat.depthWrite = false;
+              mat.alphaTest = 0.1;
             });
           } else {
             selectedTextSprite.material.opacity = 1;
-            selectedTextSprite.material.transparent = false;
+            selectedTextSprite.material.transparent = true; // Включаем прозрачность для правильного отображения поверх узлов
+            selectedTextSprite.material.depthTest = false;
+            selectedTextSprite.material.depthWrite = false;
+            selectedTextSprite.material.alphaTest = 0.1;
           }
         }
       }
@@ -950,7 +959,7 @@ export class DetailModeSystem {
         const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * currentScale.x;
         // Добавляем дополнительное расстояние, чтобы текст всегда был спереди от увеличенного узла
         const extraDistance = Math.max(0, (currentScale.x - 1) * 100); // Увеличиваем коэффициент для надежности
-        nodeData.textSprite.position.set(0, nodeRadius + 90 + extraDistance, 0);
+        nodeData.textSprite.position.set(0, nodeRadius + TEXT_OFFSET_Y + extraDistance, 0);
       }
 
       // Показываем оверлей затемнения
@@ -991,6 +1000,10 @@ export class DetailModeSystem {
         // Обновляем размер текста после входа в детальный режим
         if (this.onTextSizeUpdate) {
           this.onTextSizeUpdate();
+        }
+        // Проверяем и корректируем размер текста, чтобы он влезал в экран
+        if (this.detailModeNode && this.detailModeNode.textSprite) {
+          this.updateNodeTextSprite(this.detailModeNode);
         }
       }
     };
@@ -1145,7 +1158,10 @@ export class DetailModeSystem {
         selectedTextSprite.visible = true;
         if (selectedTextSprite.material) {
           selectedTextSprite.material.opacity = 1.0;
-          selectedTextSprite.material.transparent = false;
+          selectedTextSprite.material.transparent = true; // Включаем прозрачность для правильного отображения поверх узлов
+          selectedTextSprite.material.depthTest = false;
+          selectedTextSprite.material.depthWrite = false;
+          selectedTextSprite.material.alphaTest = 0.1;
         }
       }
       
@@ -1476,7 +1492,10 @@ export class DetailModeSystem {
       
       if (selectedTextSprite && selectedTextSprite.material) {
         selectedTextSprite.material.opacity = 1;
-        selectedTextSprite.material.transparent = false;
+        selectedTextSprite.material.transparent = true; // Включаем прозрачность для правильного отображения поверх узлов
+        selectedTextSprite.material.depthTest = false;
+        selectedTextSprite.material.depthWrite = false;
+        selectedTextSprite.material.alphaTest = 0.1;
       }
 
       // Добавляем светлячки обратно в treeGroup
@@ -1544,7 +1563,7 @@ export class DetailModeSystem {
         const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * currentScale.x;
         const textPos = new THREE.Vector3(
           originalPosition.x,
-          originalPosition.y + nodeRadius + 90,
+          originalPosition.y + nodeRadius + TEXT_OFFSET_Y,
           originalPosition.z
         );
         nodeData.textSprite.position.lerp(textPos, easedProgress);
@@ -2480,12 +2499,143 @@ export class DetailModeSystem {
   }
 
   /**
+   * Проверить, влезает ли текст спрайта в экран по ширине
+   * @param {THREE.Sprite} sprite - Спрайт с текстом
+   * @param {number} fontSize - Размер шрифта (не используется, но оставлен для совместимости)
+   * @param {number} screenMargin - Отступ от краев экрана в пикселях (по умолчанию 20)
+   * @returns {boolean} - true если текст влезает, false если нет
+   */
+  isTextFitsOnScreen(sprite, fontSize, screenMargin = 20) {
+    if (!sprite || !this.camera) {
+      return true; // Если нет спрайта или камеры, считаем что влезает
+    }
+
+    // Проецируем 3D позицию спрайта в экранные координаты
+    const worldPosition = new THREE.Vector3();
+    sprite.getWorldPosition(worldPosition);
+    const projectedPosition = worldPosition.clone().project(this.camera);
+
+    // Преобразуем нормализованные координаты (-1 до 1) в пиксели
+    const screenX = (projectedPosition.x + 1) * 0.5 * window.innerWidth;
+    const screenY = (-projectedPosition.y + 1) * 0.5 * window.innerHeight;
+
+    // Получаем размеры спрайта в экранных координатах
+    // sprite.scale содержит размеры в 3D пространстве, нужно преобразовать в экранные координаты
+    const distance = this.camera.position.distanceTo(worldPosition);
+    const fov = this.camera.fov * (Math.PI / 180);
+    const heightAtDistance = 2 * Math.tan(fov / 2) * distance;
+    const pixelPerUnit = window.innerHeight / heightAtDistance;
+
+    // Размеры спрайта в пикселях
+    const spriteWidthPixels = sprite.scale.x * pixelPerUnit;
+
+    // Рассчитываем границы текста на экране
+    const leftBound = screenX - spriteWidthPixels / 2;
+    const rightBound = screenX + spriteWidthPixels / 2;
+
+    // Проверяем, влезает ли текст в границы экрана с учетом отступов
+    const fits = leftBound >= screenMargin && rightBound <= window.innerWidth - screenMargin;
+
+    return fits;
+  }
+
+  /**
    * Обновить текст спрайт для узла в режиме детализации
    */
   updateNodeTextSprite(nodeData) {
     const node = nodeData.node;
     const isRoot = node.level === 0;
-    const fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+    let fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+    const MIN_FONT_SIZE = 32; // Минимальный размер шрифта
+    const screenMargin = 20; // Отступ от краев экрана
+
+    // В детальном режиме проверяем и уменьшаем размер шрифта, если текст не влезает
+    if (this.isDetailMode) {
+      let attempts = 0;
+      const maxAttempts = 20; // Максимальное количество попыток (защита от бесконечного цикла)
+
+      while (attempts < maxAttempts && fontSize >= MIN_FONT_SIZE) {
+        // Создаем текстуру с текущим размером шрифта
+        const result = this.createTextTexture(node, fontSize);
+        
+        // Обновляем спрайт с новой текстурой
+        if (nodeData.textSprite) {
+          // Освобождаем старую текстуру
+          if (nodeData.textSprite.material.map) {
+            nodeData.textSprite.material.map.dispose();
+          }
+
+          // Устанавливаем новую текстуру
+          nodeData.textSprite.material.map = result.texture;
+          nodeData.textSprite.material.needsUpdate = true;
+
+          // Устанавливаем настройки для отображения поверх всех объектов
+          nodeData.textSprite.renderOrder = 999;
+          nodeData.textSprite.material.transparent = true;
+          nodeData.textSprite.material.depthTest = false;
+          nodeData.textSprite.material.depthWrite = false;
+          nodeData.textSprite.material.alphaTest = 0.1;
+
+          // Рассчитываем новый масштаб
+          nodeData.textSprite.scale.set(
+            (result.canvas.width / TEXT_SCALE_FACTOR) * 1.5,
+            (result.canvas.height / TEXT_SCALE_FACTOR) * 1.5,
+            1
+          );
+
+          // Проверяем, влезает ли текст в экран
+          if (this.isTextFitsOnScreen(nodeData.textSprite, fontSize, screenMargin)) {
+            // Текст влезает, выходим из цикла
+            break;
+          } else {
+            // Текст не влезает, уменьшаем размер шрифта
+            fontSize = Math.max(MIN_FONT_SIZE, fontSize * 0.9); // Уменьшаем на 10%
+            attempts++;
+          }
+        } else {
+          // Если спрайта нет, выходим из цикла
+          break;
+        }
+      }
+    } else {
+      // В обычном режиме просто создаем текстуру с исходным размером шрифта
+      const result = this.createTextTexture(node, fontSize);
+      
+      // Обновляем существующий спрайт
+      if (nodeData.textSprite) {
+        // Освобождаем старую текстуру
+        if (nodeData.textSprite.material.map) {
+          nodeData.textSprite.material.map.dispose();
+        }
+
+        // Устанавливаем новую текстуру
+        nodeData.textSprite.material.map = result.texture;
+        nodeData.textSprite.material.needsUpdate = true;
+
+        // Устанавливаем настройки для отображения поверх всех объектов
+        nodeData.textSprite.renderOrder = 999;
+        nodeData.textSprite.material.transparent = true;
+        nodeData.textSprite.material.depthTest = false;
+        nodeData.textSprite.material.depthWrite = false;
+        nodeData.textSprite.material.alphaTest = 0.1;
+
+        // Рассчитываем новый масштаб
+        nodeData.textSprite.scale.set(
+          (result.canvas.width / TEXT_SCALE_FACTOR) * 1.5,
+          (result.canvas.height / TEXT_SCALE_FACTOR) * 1.5,
+          1
+        );
+      }
+    }
+  }
+
+  /**
+   * Создать текстуру с текстом для узла
+   * @param {Object} node - Узел с текстом
+   * @param {number} fontSize - Размер шрифта
+   * @returns {Object} - Объект с текстурой и canvas
+   */
+  createTextTexture(node, fontSize) {
     const lineHeight = fontSize * 1.2; // Межстрочный интервал
 
     // Создаем новую текстуру
@@ -2548,25 +2698,7 @@ export class DetailModeSystem {
     const texture = new THREE.CanvasTexture(canvas);
     texture.needsUpdate = true;
 
-    // Обновляем существующий спрайт
-    if (nodeData.textSprite) {
-      // Освобождаем старую текстуру
-      if (nodeData.textSprite.material.map) {
-        nodeData.textSprite.material.map.dispose();
-      }
-
-      // Устанавливаем новую текстуру
-      nodeData.textSprite.material.map = texture;
-      nodeData.textSprite.material.needsUpdate = true;
-
-      // Устанавливаем настройки для отображения поверх всех объектов
-      nodeData.textSprite.renderOrder = 999;
-      nodeData.textSprite.material.depthTest = false;
-      nodeData.textSprite.material.depthWrite = false;
-
-      // Рассчитываем новый масштаб
-      nodeData.textSprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
-    }
+    return { texture, canvas };
   }
 
   /**
@@ -2739,7 +2871,7 @@ export class DetailModeSystem {
 
     // Позиционируем текст над сферой
     sprite.position.copy(node.position);
-    sprite.position.y += radius + 90;
+    sprite.position.y += radius + TEXT_OFFSET_Y;
     sprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
     sprite.renderOrder = 999; // Текст всегда поверх всех элементов
 
