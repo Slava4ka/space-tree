@@ -4,9 +4,9 @@ import {
   CAMERA_NEAR,
   CAMERA_FAR,
   CAMERA_INITIAL_POSITION,
+  CAMERA_ZOOM_STEPS,
   CAMERA_MIN_ZOOM,
   CAMERA_MAX_ZOOM,
-  CAMERA_ZOOM_STEP
 } from '../utils/constants.js';
 
 /**
@@ -34,10 +34,17 @@ export class CameraManager {
     this.cameraTarget = new THREE.Vector3(0, 0, 0);
     
     // Параметры зума
-    this.currentZoom = 0.5;
-    this.minZoom = 0.2;
-    this.maxZoom = 3;
-    this.zoomStepPercent = 0.15; // 15% от текущего зума для пропорционального шага
+    // Фиксированные шаги зума: больше шагов в диапазоне < 1 (более чувствительно), меньше шагов в диапазоне > 2
+    this.zoomSteps = CAMERA_ZOOM_STEPS;
+    this.minZoom = CAMERA_MIN_ZOOM;
+    this.maxZoom = CAMERA_MAX_ZOOM;
+    this.currentZoom = CAMERA_ZOOM_STEPS[6];
+    // Находим индекс начального зума (0.2 находится на индексе 5)
+    this.currentZoomIndex = this.zoomSteps.indexOf(this.currentZoom);
+    if (this.currentZoomIndex === -1) {
+      // Если точного совпадения нет, используем индекс 5 (0.2)
+      this.currentZoomIndex = 5;
+    }
     
     // Устанавливаем начальную позицию
     this.updatePosition();
@@ -82,9 +89,25 @@ export class CameraManager {
 
   /**
    * Установить зум
+   * Округляет значение до ближайшего дискретного шага из массива zoomSteps
    */
   setZoom(zoom) {
-    this.currentZoom = THREE.MathUtils.clamp(zoom, this.minZoom, this.maxZoom);
+    const clampedZoom = THREE.MathUtils.clamp(zoom, this.minZoom, this.maxZoom);
+    
+    // Находим ближайший шаг
+    let closestStep = this.zoomSteps[0];
+    let minDiff = Math.abs(clampedZoom - this.zoomSteps[0]);
+    
+    for (let i = 0; i < this.zoomSteps.length; i++) {
+      const diff = Math.abs(clampedZoom - this.zoomSteps[i]);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestStep = this.zoomSteps[i];
+        this.currentZoomIndex = i;
+      }
+    }
+    
+    this.currentZoom = closestStep;
     this.updatePosition();
   }
 
@@ -96,31 +119,48 @@ export class CameraManager {
   }
 
   /**
-   * Вычислить адаптивный шаг зума на основе текущего значения
-   * Использует процент от текущего зума для плавного изменения на любом уровне
+   * Получить индекс текущего шага зума
    */
-  getZoomStep() {
-    // Используем процент от текущего зума, но не меньше минимального абсолютного значения
-    const proportionalStep = this.currentZoom * this.zoomStepPercent;
-    // Минимальный шаг для очень маленьких значений зума
-    const minAbsoluteStep = 0.01;
-    return Math.max(proportionalStep, minAbsoluteStep);
+  getCurrentZoomIndex() {
+    // Находим ближайший шаг к текущему зуму
+    let closestIndex = 0;
+    let minDiff = Math.abs(this.currentZoom - this.zoomSteps[0]);
+    
+    for (let i = 1; i < this.zoomSteps.length; i++) {
+      const diff = Math.abs(this.currentZoom - this.zoomSteps[i]);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIndex = i;
+      }
+    }
+    
+    return closestIndex;
   }
 
   /**
    * Увеличить зум
+   * Переключается на следующий дискретный шаг
    */
   zoomIn() {
-    const step = this.getZoomStep();
-    this.setZoom(this.currentZoom + step);
+    this.currentZoomIndex = this.getCurrentZoomIndex();
+    if (this.currentZoomIndex < this.zoomSteps.length - 1) {
+      this.currentZoomIndex++;
+      this.currentZoom = this.zoomSteps[this.currentZoomIndex];
+      this.updatePosition();
+    }
   }
 
   /**
    * Уменьшить зум
+   * Переключается на предыдущий дискретный шаг
    */
   zoomOut() {
-    const step = this.getZoomStep();
-    this.setZoom(this.currentZoom - step);
+    this.currentZoomIndex = this.getCurrentZoomIndex();
+    if (this.currentZoomIndex > 0) {
+      this.currentZoomIndex--;
+      this.currentZoom = this.zoomSteps[this.currentZoomIndex];
+      this.updatePosition();
+    }
   }
 
 
@@ -140,12 +180,12 @@ export class CameraManager {
     // автоматически устанавливаем текущий зум на новый минимальный,
     // чтобы пользователь мог видеть всю сцену
     if (newMinZoom < previousMinZoom) {
-      const step = this.getZoomStep();
-      this.setZoom(newMinZoom + step);
+      // Устанавливаем на минимальный доступный шаг
+      this.setZoom(this.zoomSteps[0]);
     } else if (this.currentZoom < this.minZoom) {
       // Корректируем текущий зум, если он меньше нового минимального значения
-      const step = this.getZoomStep();
-      this.setZoom(this.minZoom + step);
+      // Устанавливаем на минимальный доступный шаг
+      this.setZoom(this.zoomSteps[0]);
     }
   }
 

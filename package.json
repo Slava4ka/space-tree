@@ -11,8 +11,7 @@
   "dependencies": {
     "lodash": "^4.17.21",
     "three": "^0.160.0",
-    "ua-parser-js": "^2.0.6",
-    "xlsx": "^0.18.5"
+    "ua-parser-js": "^2.0.6"
   },
   "devDependencies": {
     "@rsbuild/core": "^1.6.7",

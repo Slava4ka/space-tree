@@ -28,9 +28,9 @@ export const CAMERA_NEAR = 0.1;                   // Ближняя плоско
 export const CAMERA_FAR = 50000;                  // Дальняя плоскость отсечения
 export const CAMERA_INITIAL_POSITION = { x: 0, y: 800, z: 1000 }; // Начальная позиция камеры
 export const CAMERA_INITIAL_DISTANCE = 1500;      // Начальное расстояние камеры для обзора нескольких деревьев
-export const CAMERA_MIN_ZOOM = 0.2;               // Минимальный зум
-export const CAMERA_MAX_ZOOM = 3;                 // Максимальный зум
-export const CAMERA_ZOOM_STEP = 0.2;              // Шаг изменения зума
+export const CAMERA_ZOOM_STEPS = [0.015, 0.02, 0.04, 0.06, 0.1, 0.15, 0.2, 0.35, 0.5, 0.7, 1.0, 2.2, 3.0];
+export const CAMERA_MIN_ZOOM = CAMERA_ZOOM_STEPS[0];               // Минимальный зум
+export const CAMERA_MAX_ZOOM = CAMERA_ZOOM_STEPS[CAMERA_ZOOM_STEPS.length - 1];                 // Максимальный зум
 
 // ==================== Detail Mode константы ====================
 export const DETAIL_MODE_SCREEN_SIZE_PERCENT = 22;  // Процент ширины экрана, который должен занимать узел (10-80%)
@@ -73,7 +73,7 @@ export const TEXT_PADDING = 20;                    // Отступ для тек
 // ==================== Text Size константы ====================
 export const ROOT_TEXT_SIZE = 84;                  // Размер шрифта текста корневых узлов
 export const NODE_TEXT_SIZE = 42;                  // Размер шрифта текста обычных узлов (уровни 1-3)
-export const MAX_WORDS_PER_LINE = 4;                // Максимальное количество слов в одной строке текста
+export const MAX_WORDS_PER_LINE = 3;                // Максимальное количество слов в одной строке текста
 
 // ==================== Word Label константы ====================
 export const WORD_LABEL_FONT_SIZE = 44;            // Размер шрифта надписей слов

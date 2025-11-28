@@ -27,8 +27,6 @@ export class UIControlsManager {
         this.onDetailModeSizeChange = options.onDetailModeSizeChange || (() => {});
         this.onRootRadiusChange = options.onRootRadiusChange || (() => {});
         this.onNodeRadiusChange = options.onNodeRadiusChange || (() => {});
-        this.onRootTextSizeChange = options.onRootTextSizeChange || (() => {});
-        this.onNodeTextSizeChange = options.onNodeTextSizeChange || (() => {});
         this.onMaxWordsPerLineChange = options.onMaxWordsPerLineChange || (() => {});
         
         // Параметры радиусов
@@ -36,8 +34,6 @@ export class UIControlsManager {
         this.nodeRadius = options.nodeRadius || 135;
 
         // Параметры размера текста
-        this.rootTextSize = options.rootTextSize || 84;
-        this.nodeTextSize = options.nodeTextSize || 42;
         this.maxWordsPerLine = options.maxWordsPerLine || 5;
         
         // Параметры для передачи в callbacks
@@ -201,7 +197,6 @@ export class UIControlsManager {
         this.setupFireflySliders();
         this.setupDetailModeSizeSlider();
         this.setupNodeSizeSliders();
-        this.setupTextSizeSliders();
         this.setupMaxWordsPerLineSlider();
     }
 
@@ -367,36 +362,6 @@ export class UIControlsManager {
         }
     }
 
-    setupTextSizeSliders() {
-        // Слайдер для размера текста корневых узлов
-        const rootTextSizeSlider = document.getElementById('root-text-size');
-        const rootTextSizeValue = document.getElementById('root-text-size-value');
-        if (rootTextSizeSlider && rootTextSizeValue) {
-            rootTextSizeSlider.value = String(this.rootTextSize);
-            rootTextSizeValue.textContent = String(this.rootTextSize);
-            rootTextSizeSlider.addEventListener('input', debounce((event) => {
-                const value = parseInt(event.target.value, 10);
-                this.rootTextSize = value;
-                rootTextSizeValue.textContent = String(value);
-                this.onRootTextSizeChange(value);
-            }, 300));
-        }
-
-        // Слайдер для размера текста обычных узлов
-        const nodeTextSizeSlider = document.getElementById('node-text-size');
-        const nodeTextSizeValue = document.getElementById('node-text-size-value');
-        if (nodeTextSizeSlider && nodeTextSizeValue) {
-            nodeTextSizeSlider.value = String(this.nodeTextSize);
-            nodeTextSizeValue.textContent = String(this.nodeTextSize);
-            nodeTextSizeSlider.addEventListener('input', debounce((event) => {
-                const value = parseInt(event.target.value, 10);
-                this.nodeTextSize = value;
-                nodeTextSizeValue.textContent = String(value);
-                this.onNodeTextSizeChange(value);
-            }, 300));
-        }
-    }
-
     setupMaxWordsPerLineSlider() {
         const maxWordsPerLineSlider = document.getElementById('max-words-per-line');
         const maxWordsPerLineValue = document.getElementById('max-words-per-line-value');
@@ -438,24 +403,6 @@ export class UIControlsManager {
             if (nodeRadiusSlider && nodeRadiusValue) {
                 nodeRadiusSlider.value = String(this.nodeRadius);
                 nodeRadiusValue.textContent = String(this.nodeRadius);
-            }
-        }
-        if (params.rootTextSize !== undefined) {
-            this.rootTextSize = params.rootTextSize;
-            const rootTextSizeSlider = document.getElementById('root-text-size');
-            const rootTextSizeValue = document.getElementById('root-text-size-value');
-            if (rootTextSizeSlider && rootTextSizeValue) {
-                rootTextSizeSlider.value = String(this.rootTextSize);
-                rootTextSizeValue.textContent = String(this.rootTextSize);
-            }
-        }
-        if (params.nodeTextSize !== undefined) {
-            this.nodeTextSize = params.nodeTextSize;
-            const nodeTextSizeSlider = document.getElementById('node-text-size');
-            const nodeTextSizeValue = document.getElementById('node-text-size-value');
-            if (nodeTextSizeSlider && nodeTextSizeValue) {
-                nodeTextSizeSlider.value = String(this.nodeTextSize);
-                nodeTextSizeValue.textContent = String(this.nodeTextSize);
             }
         }
         if (params.maxWordsPerLine !== undefined) {

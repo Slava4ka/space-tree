@@ -151,12 +151,16 @@ class RadialTreeVisualization {
             initialCameraDistance: this.initialCameraDistance,
             rootRadius: this.rootRadius,
             nodeRadius: this.nodeRadius,
-            rootTextSize: this.rootTextSize,
-            nodeTextSize: this.nodeTextSize,
             maxWordsPerLine: this.maxWordsPerLine,
             onZoomChange: (newZoom) => {
                 this.currentZoom = newZoom;
                 this.updateCameraZoom();
+            },
+            onTextSizeUpdate: () => {
+                // Обновляем размер текста после открытия/закрытия детального режима
+                if (this.treeRenderer) {
+                    this.treeRenderer.updateTextSizes();
+                }
             },
             onCameraTargetChange: (newTarget) => {
                 this.cameraTarget.copy(newTarget);
@@ -225,6 +229,7 @@ class RadialTreeVisualization {
             sceneManager: this.sceneManager,
             loadingScreen: this.loadingScreen,
             detailModeSystem: this.detailModeSystem,
+            cameraManager: this.cameraManager,
                 spacingFactor: this.spacingFactor,
                 levelMarginFactor: this.levelMarginFactor,
             levelLimits: this.levelLimits,
@@ -234,8 +239,6 @@ class RadialTreeVisualization {
             fireflyRotationSpeed: this.fireflyRotationSpeed,
             rootRadius: this.rootRadius,
             nodeRadius: this.nodeRadius,
-            rootTextSize: this.rootTextSize,
-            nodeTextSize: this.nodeTextSize,
             maxWordsPerLine: this.maxWordsPerLine,
             onNodeMeshesUpdate: (nodeMeshes) => {
                 this.nodeMeshes = nodeMeshes;
@@ -273,6 +276,11 @@ class RadialTreeVisualization {
         
         // Вычисляем и устанавливаем минимальный зум на основе размера сцены
         this.calculateAndSetMinZoom();
+        
+        // Обновляем размер текста на основе текущего зума (для первого рендера)
+        if (this.treeRenderer) {
+            this.treeRenderer.updateTextSizes();
+        }
     }
     
     /**
@@ -348,8 +356,6 @@ class RadialTreeVisualization {
             detailModeSystem: this.detailModeSystem,
             rootRadius: this.rootRadius,
             nodeRadius: this.nodeRadius,
-            rootTextSize: this.rootTextSize,
-            nodeTextSize: this.nodeTextSize,
             maxWordsPerLine: this.maxWordsPerLine,
             onSpacingFactorChange: (value) => {
                 this.spacingFactor = value;
@@ -432,26 +438,6 @@ class RadialTreeVisualization {
                 }
                 this.createTrees(3);
             },
-            onRootTextSizeChange: (value) => {
-                this.rootTextSize = value;
-                this.treeRenderer.updateParams({ rootTextSize: value });
-                if (this.detailModeSystem) {
-                    this.detailModeSystem.updateParams({ rootTextSize: value });
-                    if (this.isDetailMode) {
-                        this.detailModeSystem.updateTextSizes(this.rootTextSize, this.nodeTextSize);
-                    }
-                }
-            },
-            onNodeTextSizeChange: (value) => {
-                this.nodeTextSize = value;
-                this.treeRenderer.updateParams({ nodeTextSize: value });
-                if (this.detailModeSystem) {
-                    this.detailModeSystem.updateParams({ nodeTextSize: value });
-                    if (this.isDetailMode) {
-                        this.detailModeSystem.updateTextSizes(this.rootTextSize, this.nodeTextSize);
-                    }
-                }
-            },
             onMaxWordsPerLineChange: (value) => {
                 this.maxWordsPerLine = value;
                 this.treeRenderer.updateParams({ maxWordsPerLine: value });
@@ -504,6 +490,11 @@ class RadialTreeVisualization {
         if (this.isDetailMode) {
             this.updateCameraPosition();
             return;
+        }
+        
+        // Обновляем размер текста узлов на основе зума (только для общего вида)
+        if (this.treeRenderer) {
+            this.treeRenderer.updateTextSizes();
         }
         
         // Если есть выделенный узел, обновляем его целевую позицию камеры

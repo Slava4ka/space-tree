@@ -41,6 +41,7 @@ export class DetailModeSystem {
     this.onCameraTargetChange = config.onCameraTargetChange || (() => {});
     this.onCameraPositionChange = config.onCameraPositionChange || (() => {});
     this.onStateChange = config.onStateChange || (() => {});
+    this.onTextSizeUpdate = config.onTextSizeUpdate || (() => {});
     
     // Константы
     this.DETAIL_MODE_SCREEN_SIZE_PERCENT = config.DETAIL_MODE_SCREEN_SIZE_PERCENT || 22;
@@ -984,6 +985,10 @@ export class DetailModeSystem {
         }
         // Запускаем превращение светлячков в слова после завершения анимации открытия
         this.transformFirefliesToWords();
+        // Обновляем размер текста после входа в детальный режим
+        if (this.onTextSizeUpdate) {
+          this.onTextSizeUpdate();
+        }
       }
     };
 
@@ -1031,6 +1036,12 @@ export class DetailModeSystem {
     }
     
     const selectedMesh = nodeData.mesh;
+    const selectedTextSprite = nodeData.textSprite;
+    
+    // Скрываем надпись на время анимации закрытия
+    if (selectedTextSprite) {
+      selectedTextSprite.visible = false;
+    }
     
     // СРАЗУ в начале анимации возврата делаем узел видимым
     if (selectedMesh) {
@@ -1570,10 +1581,15 @@ export class DetailModeSystem {
         this.camera.lookAt(newTarget);
       }
 
+      // Держим надпись скрытой во время анимации
+      if (selectedTextSprite) {
+        selectedTextSprite.visible = false;
+      }
+      
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        // Очищаем режим
+        // Очищаем режим (в cleanup надпись будет показана после обновления размера)
         this.cleanup();
       }
     };
@@ -1712,6 +1728,23 @@ export class DetailModeSystem {
       this.controls.enable();
     }
 
+    // Сохраняем ссылку на textSprite перед сбросом detailModeNode
+    const textSprite = this.detailModeNode ? this.detailModeNode.textSprite : null;
+    
+    // Вызываем callback для обновления состояния в main.js
+    if (this.onStateChange) {
+      this.onStateChange(false, null);
+    }
+    // Обновляем размер текста после выхода из детального режима
+    if (this.onTextSizeUpdate) {
+      this.onTextSizeUpdate();
+    }
+    
+    // Показываем надпись узла после завершения анимации и обновления размера
+    if (textSprite) {
+      textSprite.visible = true;
+    }
+    
     // Сбрасываем флаги
     this.isDetailMode = false;
     this.detailModeNode = null;
@@ -1719,10 +1752,6 @@ export class DetailModeSystem {
     this.originalCameraPosition = null;
     this.originalCameraTarget = null;
     this.neonRingRotationY = 0; // Сбрасываем угол поворота кольца
-    // Вызываем callback для обновления состояния в main.js
-    if (this.onStateChange) {
-      this.onStateChange(false, null);
-    }
   }
 
   /**

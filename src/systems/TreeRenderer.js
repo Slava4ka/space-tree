@@ -16,7 +16,9 @@ import {
     TEXT_SCALE_FACTOR,
     TEXT_PADDING,
     SPHERE_SEGMENTS,
-    SPHERE_RINGS
+    SPHERE_RINGS,
+    CAMERA_MIN_ZOOM,
+    CAMERA_ZOOM_STEPS
 } from '../utils/constants.js';
 
 /**
@@ -28,6 +30,7 @@ export class TreeRenderer {
         this.sceneManager = options.sceneManager;
         this.loadingScreen = options.loadingScreen;
         this.detailModeSystem = options.detailModeSystem || null;
+        this.cameraManager = options.cameraManager || null;
         
         // Параметры
         this.spacingFactor = options.spacingFactor || 1.4;
@@ -797,7 +800,9 @@ export class TreeRenderer {
         let textSprite = null;
         if (node.text) {
             textSprite = this.createTextSprite(node, isRoot, radius);
-            treeGroup.add(textSprite);
+            if (textSprite) {
+                treeGroup.add(textSprite);
+            }
         }
         
         // Сохраняем в массив всех узлов
@@ -853,11 +858,24 @@ export class TreeRenderer {
      * Создание текстового спрайта для узла
      */
     createTextSprite(node, isRoot, radius) {
+        // Всегда создаем спрайты, видимость будет управляться в updateNodeTextSprite
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         
-        // Размер шрифта зависит от уровня и настроек
-        const fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+        // Базовый размер шрифта зависит от уровня и настроек
+        const baseFontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+        
+        // Рассчитываем размер шрифта на основе зума камеры
+        // Формула: fontSize = baseSize * (minZoom / currentZoom)
+        // Чем больше зум (ближе камера), тем меньше размер шрифта
+        let fontSize = baseFontSize;
+        if (this.cameraManager) {
+            const currentZoom = this.cameraManager.getZoom();
+            fontSize = baseFontSize * (CAMERA_MIN_ZOOM / currentZoom);
+            // Минимальный размер шрифта - 32 пикселя
+            fontSize = Math.max(fontSize, isRoot ? 72 : 38);
+        }
+        
         const lineHeight = fontSize * 1.2; // Межстрочный интервал
         context.font = `bold ${fontSize}px Arial`;
         
@@ -930,6 +948,23 @@ export class TreeRenderer {
         sprite.position.y += radius + 90;
         sprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
         sprite.renderOrder = 999; // Текст всегда поверх всех элементов
+        
+        // Устанавливаем начальную видимость на основе зума (для дочерних узлов)
+        // Корневые узлы всегда видимы
+        if (isRoot) {
+            sprite.visible = true;
+        } else {
+            // Для дочерних узлов видимость зависит от зума
+            const isDetailMode = this.detailModeSystem && this.detailModeSystem.isActive();
+            if (isDetailMode) {
+                sprite.visible = true; // В детальном режиме все видимо
+            } else if (this.cameraManager) {
+                const currentZoom = this.cameraManager.getZoom();
+                sprite.visible = currentZoom >= 1.5;
+            } else {
+                sprite.visible = true; // Если нет cameraManager, показываем все
+            }
+        }
         
         return sprite;
     }
@@ -1080,12 +1115,52 @@ export class TreeRenderer {
         const isRoot = node.level === 0;
         const radius = isRoot ? this.rootRadius : this.nodeRadius;
 
+        // Если зум меньше 1.5, скрываем надписи у дочерних узлов (не корневых)
+        if (!isRoot && this.cameraManager && (!this.detailModeSystem || !this.detailModeSystem.isActive())) {
+            const currentZoom = this.cameraManager.getZoom();
+            
+            if (currentZoom < CAMERA_ZOOM_STEPS[5]) {
+                // Скрываем спрайт дочернего узла
+                if (nodeData.textSprite) {
+                    nodeData.textSprite.visible = false;
+                }
+                return; // Для дочерних узлов при зуме < 1.5 только скрываем, не обновляем текстуру
+            } else {
+                // Показываем спрайт дочернего узла или создаем его, если его нет
+                if (nodeData.textSprite) {
+                    nodeData.textSprite.visible = true;
+                } else if (node.text && nodeData.treeGroup) {
+                    // Создаем спрайт, если его нет и зум >= 1.5
+                    const newSprite = this.createTextSprite(node, isRoot, radius);
+                    if (newSprite) {
+                        nodeData.textSprite = newSprite;
+                        nodeData.treeGroup.add(newSprite);
+                        // Обновляем originalSpriteScale
+                        nodeData.originalSpriteScale = newSprite.scale.clone();
+                    }
+                }
+            }
+        }
+
         // Создаем новую текстуру
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
 
-        // Размер шрифта зависит от уровня и настроек
-        const fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+        // Базовый размер шрифта зависит от уровня и настроек
+        const baseFontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+        
+        // Рассчитываем размер шрифта на основе зума камеры
+        // Формула: fontSize = baseSize * (minZoom / currentZoom)
+        // Чем больше зум (ближе камера), тем меньше размер шрифта
+        // Применяем только для общего вида (не в детальном режиме)
+        let fontSize = baseFontSize;
+        if (this.cameraManager && (!this.detailModeSystem || !this.detailModeSystem.isActive())) {
+            const currentZoom = this.cameraManager.getZoom();
+            fontSize = baseFontSize * (CAMERA_MIN_ZOOM / currentZoom);
+            // Минимальный размер шрифта - 32 пикселя
+            fontSize = Math.max(fontSize, isRoot ? 72 : 38);
+        }
+        
         const lineHeight = fontSize * 1.2; // Межстрочный интервал
         context.font = `bold ${fontSize}px Arial`;
 
@@ -1158,6 +1233,11 @@ export class TreeRenderer {
             nodeData.textSprite.renderOrder = 999;
             nodeData.textSprite.material.depthTest = false;
             nodeData.textSprite.material.depthWrite = false;
+            
+            // Убеждаемся, что корневые узлы всегда видимы
+            if (isRoot) {
+                nodeData.textSprite.visible = true;
+            }
 
             // Рассчитываем новый масштаб
             nodeData.textSprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
