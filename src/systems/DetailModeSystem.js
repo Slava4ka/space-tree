@@ -169,6 +169,9 @@ export class DetailModeSystem {
     // Блокируем элементы управления зумом
     this.disableZoomControls();
     
+    // Блокируем элементы управления навигацией
+    this.disableNavigationControls();
+    
     // Блокируем управление камерой мышью
     if (this.controls) {
       this.controls.disable();
@@ -1723,6 +1726,9 @@ export class DetailModeSystem {
     // Разблокируем элементы управления зумом
     this.enableZoomControls();
     
+    // Разблокируем элементы управления навигацией
+    this.enableNavigationControls();
+    
     // Разблокируем управление камерой мышью
     if (this.controls) {
       this.controls.enable();
@@ -2388,6 +2394,44 @@ export class DetailModeSystem {
       zoomOutBtn.style.pointerEvents = 'auto';
       zoomOutBtn.disabled = false;
     }
+  }
+
+  /**
+   * Блокировка элементов управления навигацией
+   */
+  disableNavigationControls() {
+    const navUpBtn = document.getElementById('nav-up');
+    const navDownBtn = document.getElementById('nav-down');
+    const navLeftBtn = document.getElementById('nav-left');
+    const navRightBtn = document.getElementById('nav-right');
+    const navHomeBtn = document.getElementById('nav-home');
+
+    [navUpBtn, navDownBtn, navLeftBtn, navRightBtn, navHomeBtn].forEach(btn => {
+      if (btn) {
+        btn.style.opacity = '0.3';
+        btn.style.pointerEvents = 'none';
+        btn.disabled = true;
+      }
+    });
+  }
+
+  /**
+   * Разблокировка элементов управления навигацией
+   */
+  enableNavigationControls() {
+    const navUpBtn = document.getElementById('nav-up');
+    const navDownBtn = document.getElementById('nav-down');
+    const navLeftBtn = document.getElementById('nav-left');
+    const navRightBtn = document.getElementById('nav-right');
+    const navHomeBtn = document.getElementById('nav-home');
+
+    [navUpBtn, navDownBtn, navLeftBtn, navRightBtn, navHomeBtn].forEach(btn => {
+      if (btn) {
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = 'auto';
+        btn.disabled = false;
+      }
+    });
   }
   
   /**

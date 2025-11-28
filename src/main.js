@@ -343,6 +343,7 @@ class RadialTreeVisualization {
             },
             updateCameraZoom: () => this.updateCameraZoom(),
             updateCameraPosition: () => this.updateCameraPosition(),
+            onCameraUpdate: () => this.updateCameraPosition(),
             selectedNode: this.selectedNode,
             spacingFactor: this.spacingFactor,
             levelMarginFactor: this.levelMarginFactor,

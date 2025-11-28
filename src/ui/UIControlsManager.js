@@ -15,6 +15,7 @@ export class UIControlsManager {
         this.updateCurrentZoom = options.updateCurrentZoom || (() => {});
         this.updateCameraZoom = options.updateCameraZoom || (() => {});
         this.updateCameraPosition = options.updateCameraPosition || (() => {});
+        this.onCameraUpdate = options.onCameraUpdate || (() => {});
         this.selectedNode = options.selectedNode || null;
         
         // Callbacks для обновления параметров
@@ -47,6 +48,20 @@ export class UIControlsManager {
         this.treeGroups = options.treeGroups || [];
         this.DETAIL_MODE_SCREEN_SIZE_PERCENT = options.DETAIL_MODE_SCREEN_SIZE_PERCENT || 30;
         this.detailModeSystem = options.detailModeSystem || null;
+        
+        // Состояние для непрерывного панорамирования
+        this.navigationInterval = null;
+        this.isNavigating = false;
+        this.currentNavigationDirection = null;
+        
+        // Ссылки на кнопки навигации для визуальной обратной связи
+        this.navButtons = {
+            up: null,
+            down: null,
+            left: null,
+            right: null,
+            home: null
+        };
     }
 
     /**
@@ -122,6 +137,262 @@ export class UIControlsManager {
     }
 
     /**
+     * Настройка контролов навигации
+     */
+    setupNavigationControls() {
+        const navUpBtn = document.getElementById('nav-up');
+        const navDownBtn = document.getElementById('nav-down');
+        const navLeftBtn = document.getElementById('nav-left');
+        const navRightBtn = document.getElementById('nav-right');
+        const navHomeBtn = document.getElementById('nav-home');
+
+        // Сохраняем ссылки на кнопки для визуальной обратной связи с клавиатурой
+        this.navButtons.up = navUpBtn;
+        this.navButtons.down = navDownBtn;
+        this.navButtons.left = navLeftBtn;
+        this.navButtons.right = navRightBtn;
+        this.navButtons.home = navHomeBtn;
+
+        // Настройка кнопок с поддержкой удержания
+        this.setupNavigationButton(navUpBtn, 'up');
+        this.setupNavigationButton(navDownBtn, 'down');
+        this.setupNavigationButton(navLeftBtn, 'left');
+        this.setupNavigationButton(navRightBtn, 'right');
+        
+        if (navHomeBtn) {
+            navHomeBtn.addEventListener('mousedown', () => {
+                if (!this.isDetailMode()) {
+                    navHomeBtn.classList.add('active');
+                    this.resetCameraPosition();
+                }
+            });
+            navHomeBtn.addEventListener('mouseup', () => {
+                navHomeBtn.classList.remove('active');
+            });
+            navHomeBtn.addEventListener('mouseleave', () => {
+                navHomeBtn.classList.remove('active');
+            });
+            navHomeBtn.addEventListener('touchstart', () => {
+                if (!this.isDetailMode()) {
+                    navHomeBtn.classList.add('active');
+                    this.resetCameraPosition();
+                }
+            });
+            navHomeBtn.addEventListener('touchend', () => {
+                navHomeBtn.classList.remove('active');
+            });
+        }
+
+        // Обработчики клавиатуры
+        this.setupKeyboardNavigation();
+    }
+
+    /**
+     * Настройка кнопки навигации с поддержкой удержания
+     */
+    setupNavigationButton(button, direction) {
+        if (!button) return;
+        
+        const startNavigation = () => {
+            if (this.isDetailMode()) return;
+            
+            this.isNavigating = true;
+            this.currentNavigationDirection = direction;
+            button.classList.add('active');
+            
+            // Первое движение сразу
+            this.handleNavigation(direction);
+            
+            // Затем непрерывное движение с интервалом
+            this.navigationInterval = setInterval(() => {
+                if (this.isNavigating && this.currentNavigationDirection === direction) {
+                    this.handleNavigation(direction);
+                }
+            }, 50); // Обновление каждые 50мс для плавности
+        };
+        
+        const stopNavigation = () => {
+            this.isNavigating = false;
+            this.currentNavigationDirection = null;
+            button.classList.remove('active');
+            
+            if (this.navigationInterval) {
+                clearInterval(this.navigationInterval);
+                this.navigationInterval = null;
+            }
+        };
+        
+        // Обработчики мыши
+        button.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            startNavigation();
+        });
+        
+        button.addEventListener('mouseup', stopNavigation);
+        button.addEventListener('mouseleave', stopNavigation);
+        
+        // Обработчики для touch (мобильные устройства)
+        button.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            startNavigation();
+        });
+        
+        button.addEventListener('touchend', stopNavigation);
+        button.addEventListener('touchcancel', stopNavigation);
+    }
+
+    /**
+     * Обработка навигации по направлению
+     */
+    handleNavigation(direction) {
+        if (this.isDetailMode()) return;
+        
+        this.cameraManager.panTargetByDirection(direction, 1.0);
+        this.onCameraUpdate();
+    }
+
+    /**
+     * Сброс камеры в исходное положение
+     */
+    resetCameraPosition() {
+        if (this.isDetailMode()) return;
+        
+        this.cameraManager.resetToInitialPosition();
+        const newZoom = this.cameraManager.getZoom();
+        this.updateCurrentZoom(newZoom);
+        this.updateCameraZoom();
+        this.onCameraUpdate();
+    }
+
+    /**
+     * Настройка обработчиков клавиатуры для навигации
+     */
+    setupKeyboardNavigation() {
+        const pressedKeys = new Set();
+        
+        document.addEventListener('keydown', (event) => {
+            // Проверяем, что фокус не в input/textarea элементах
+            const activeElement = document.activeElement;
+            if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                return;
+            }
+
+            // Блокируем в детальном режиме
+            if (this.isDetailMode()) return;
+
+            // Предотвращаем повторную обработку, если клавиша уже нажата
+            if (pressedKeys.has(event.key)) {
+                return;
+            }
+
+            let button = null;
+            let direction = null;
+
+            switch (event.key) {
+                case 'ArrowUp':
+                    event.preventDefault();
+                    direction = 'up';
+                    button = this.navButtons.up;
+                    break;
+                case 'ArrowDown':
+                    event.preventDefault();
+                    direction = 'down';
+                    button = this.navButtons.down;
+                    break;
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    direction = 'left';
+                    button = this.navButtons.left;
+                    break;
+                case 'ArrowRight':
+                    event.preventDefault();
+                    direction = 'right';
+                    button = this.navButtons.right;
+                    break;
+                case 'Home':
+                    event.preventDefault();
+                    button = this.navButtons.home;
+                    break;
+            }
+
+            if (button) {
+                pressedKeys.add(event.key);
+                button.classList.add('active');
+                
+                if (direction) {
+                    // Начинаем непрерывное панорамирование
+                    this.isNavigating = true;
+                    this.currentNavigationDirection = direction;
+                    
+                    // Первое движение сразу
+                    this.handleNavigation(direction);
+                    
+                    // Затем непрерывное движение с интервалом
+                    if (this.navigationInterval) {
+                        clearInterval(this.navigationInterval);
+                    }
+                    this.navigationInterval = setInterval(() => {
+                        if (this.isNavigating && this.currentNavigationDirection === direction) {
+                            this.handleNavigation(direction);
+                        }
+                    }, 50);
+                } else if (event.key === 'Home') {
+                    this.resetCameraPosition();
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (event) => {
+            // Проверяем, что фокус не в input/textarea элементах
+            const activeElement = document.activeElement;
+            if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                return;
+            }
+
+            let button = null;
+            let direction = null;
+
+            switch (event.key) {
+                case 'ArrowUp':
+                    direction = 'up';
+                    button = this.navButtons.up;
+                    break;
+                case 'ArrowDown':
+                    direction = 'down';
+                    button = this.navButtons.down;
+                    break;
+                case 'ArrowLeft':
+                    direction = 'left';
+                    button = this.navButtons.left;
+                    break;
+                case 'ArrowRight':
+                    direction = 'right';
+                    button = this.navButtons.right;
+                    break;
+                case 'Home':
+                    button = this.navButtons.home;
+                    break;
+            }
+
+            if (button) {
+                pressedKeys.delete(event.key);
+                button.classList.remove('active');
+                
+                if (direction && this.currentNavigationDirection === direction) {
+                    // Останавливаем непрерывное панорамирование
+                    this.isNavigating = false;
+                    this.currentNavigationDirection = null;
+                    
+                    if (this.navigationInterval) {
+                        clearInterval(this.navigationInterval);
+                        this.navigationInterval = null;
+                    }
+                }
+            }
+        });
+    }
+
+    /**
      * Блокировка элементов управления зумом в режиме детального просмотра
      */
     disableZoomControls() {
@@ -160,9 +431,50 @@ export class UIControlsManager {
     }
 
     /**
+     * Блокировка элементов управления навигацией в режиме детального просмотра
+     */
+    disableNavigationControls() {
+        const navUpBtn = document.getElementById('nav-up');
+        const navDownBtn = document.getElementById('nav-down');
+        const navLeftBtn = document.getElementById('nav-left');
+        const navRightBtn = document.getElementById('nav-right');
+        const navHomeBtn = document.getElementById('nav-home');
+
+        [navUpBtn, navDownBtn, navLeftBtn, navRightBtn, navHomeBtn].forEach(btn => {
+            if (btn) {
+                btn.style.opacity = '0.3';
+                btn.style.pointerEvents = 'none';
+                btn.disabled = true;
+            }
+        });
+    }
+
+    /**
+     * Разблокировка элементов управления навигацией
+     */
+    enableNavigationControls() {
+        const navUpBtn = document.getElementById('nav-up');
+        const navDownBtn = document.getElementById('nav-down');
+        const navLeftBtn = document.getElementById('nav-left');
+        const navRightBtn = document.getElementById('nav-right');
+        const navHomeBtn = document.getElementById('nav-home');
+
+        [navUpBtn, navDownBtn, navLeftBtn, navRightBtn, navHomeBtn].forEach(btn => {
+            if (btn) {
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+                btn.disabled = false;
+            }
+        });
+    }
+
+    /**
      * Настройка layout контролов (слайдеры)
      */
     setupLayoutControls() {
+        // Настройка навигационных контролов
+        this.setupNavigationControls();
+        
         // Логика сворачивания/разворачивания панели настроек
         const layoutControls = document.querySelector('.layout-controls');
         const layoutToggle = document.querySelector('.layout-toggle');

@@ -236,5 +236,72 @@ export class CameraManager {
     this.camera.far = Math.max(safeFar, 100000);
     this.camera.updateProjectionMatrix();
   }
+
+  /**
+   * Сбросить камеру в исходное положение
+   */
+  resetToInitialPosition() {
+    // Сброс цели камеры в центр сцены
+    this.cameraTarget.set(0, 0, 0);
+    
+    // Сброс зума в начальное значение
+    this.currentZoom = this.zoomSteps[6]; // 0.2
+    this.currentZoomIndex = 6;
+    
+    // Обновляем позицию камеры
+    this.updatePosition();
+  }
+
+  /**
+   * Панорамирование камеры по направлению
+   * @param {string} direction - Направление: 'up', 'down', 'left', 'right'
+   * @param {number} speed - Скорость панорамирования (умножается на базовую скорость)
+   */
+  panTargetByDirection(direction, speed = 1.0) {
+    // Вычисляем базовую скорость панорамирования на основе текущего зума
+    // Используем ту же логику, что и в Controls.js - получаем размер видимой области
+    const { width, height } = this.getVisibleSize();
+    const containerWidth = window.innerWidth;
+    const containerHeight = window.innerHeight;
+    
+    // Вычисляем скорость панорамирования (аналогично Controls.js)
+    const panSpeedX = (width / containerWidth) * speed * 10; // Множитель 10 для удобства
+    const panSpeedZ = (height / containerHeight) * speed * 10;
+    
+    // Вычисляем направление панорамирования
+    // Камера смотрит сверху под углом, поэтому вычисляем направления в плоскости XZ
+    const up = new THREE.Vector3(0, 1, 0); // Глобальная ось Y (вверх)
+    const cameraDirection = this.baseDirection.clone();
+    
+    // Вычисляем направление "вправо" в плоскости XZ (перпендикулярно направлению камеры)
+    const cameraRight = new THREE.Vector3().crossVectors(cameraDirection, up).normalize();
+    // Вычисляем направление "вперед" в плоскости XZ (перпендикулярно cameraRight)
+    const cameraForward = new THREE.Vector3().crossVectors(up, cameraRight).normalize();
+    
+    let delta = new THREE.Vector3();
+    
+    switch (direction) {
+      case 'up':
+        // Вверх = против направления cameraForward (назад от камеры)
+        delta.copy(cameraForward).multiplyScalar(-panSpeedZ);
+        break;
+      case 'down':
+        // Вниз = по направлению cameraForward (вперед от камеры)
+        delta.copy(cameraForward).multiplyScalar(panSpeedZ);
+        break;
+      case 'left':
+        // Влево = по направлению cameraRight
+        delta.copy(cameraRight).multiplyScalar(panSpeedX);
+        break;
+      case 'right':
+        // Вправо = против направления cameraRight
+        delta.copy(cameraRight).multiplyScalar(-panSpeedX);
+        break;
+      default:
+        return;
+    }
+    
+    this.panTarget(delta);
+  }
 }
 
