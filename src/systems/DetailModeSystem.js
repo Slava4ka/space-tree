@@ -2515,13 +2515,21 @@ export class DetailModeSystem {
     sprite.getWorldPosition(worldPosition);
     const projectedPosition = worldPosition.clone().project(this.camera);
 
+    // Проверяем, что спрайт находится перед камерой (z < 1 в нормализованных координатах)
+    if (projectedPosition.z > 1) {
+      return false; // Спрайт за камерой, не влезает
+    }
+
     // Преобразуем нормализованные координаты (-1 до 1) в пиксели
     const screenX = (projectedPosition.x + 1) * 0.5 * window.innerWidth;
-    const screenY = (-projectedPosition.y + 1) * 0.5 * window.innerHeight;
 
     // Получаем размеры спрайта в экранных координатах
     // sprite.scale содержит размеры в 3D пространстве, нужно преобразовать в экранные координаты
     const distance = this.camera.position.distanceTo(worldPosition);
+    if (distance <= 0) {
+      return true; // Если расстояние некорректное, считаем что влезает
+    }
+
     const fov = this.camera.fov * (Math.PI / 180);
     const heightAtDistance = 2 * Math.tan(fov / 2) * distance;
     const pixelPerUnit = window.innerHeight / heightAtDistance;
@@ -2582,6 +2590,12 @@ export class DetailModeSystem {
             (result.canvas.height / TEXT_SCALE_FACTOR) * 1.5,
             1
           );
+
+          // Обновляем матрицу спрайта для корректного расчета позиции
+          nodeData.textSprite.updateMatrix();
+          if (nodeData.textSprite.parent) {
+            nodeData.textSprite.parent.updateMatrixWorld(true);
+          }
 
           // Проверяем, влезает ли текст в экран
           if (this.isTextFitsOnScreen(nodeData.textSprite, fontSize, screenMargin)) {

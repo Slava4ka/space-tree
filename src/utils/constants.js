@@ -42,7 +42,7 @@ export const DETAIL_MODE_ACTOR_RADIUS = 400;        // Радиус распол
 export const ANIMATION_SPEED = 0.05;               // Скорость анимации (lerp factor)
 
 // ==================== Text константы ====================
-export const TEXT_OFFSET_Y = 450;                  // Вертикальное смещение текста над узлом (в пикселях)
+export const TEXT_OFFSET_Y = 250;                  // Вертикальное смещение текста над узлом (в пикселях)
 
 // ==================== Lighting константы ====================
 export const AMBIENT_LIGHT_COLOR = 0x57fafd;       // Голубоватый цвет окружающего света (как на картинке)
