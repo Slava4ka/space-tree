@@ -59,7 +59,6 @@ export class DetailModeSystem {
     // Состояние
     this.isDetailMode = false;
     this.detailModeNode = null;
-    this.detailModeOverlay = null;
     this.detailModeExitButton = null;
     this.detailModeActorLabels = [];
     this.detailModeWordLabels = []; // Метки слов, созданные из светлячков
@@ -178,9 +177,6 @@ export class DetailModeSystem {
       this.controls.disable();
     }
 
-    // Создаем оверлей затемнения
-    this.createOverlay();
-
     // Создаем кнопку выхода
     this.createExitButton();
 
@@ -289,29 +285,6 @@ export class DetailModeSystem {
   }
 
   // Приватные методы
-
-  /**
-   * Создание оверлея затемнения
-   */
-  createOverlay() {
-    const geometry = new THREE.PlaneGeometry(50000, 50000);
-    const texture = TextureGenerator.createRadialGradientTexture(1024, 1024);
-
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    });
-
-    const overlay = new THREE.Mesh(geometry, material);
-    overlay.position.set(0, 0, -200);
-    overlay.renderOrder = -2;
-
-    this.scene.add(overlay);
-    this.detailModeOverlay = overlay;
-  }
 
   /**
    * Создание кнопки выхода
@@ -962,11 +935,6 @@ export class DetailModeSystem {
         nodeData.textSprite.position.set(0, nodeRadius + TEXT_OFFSET_Y + extraDistance, 0);
       }
 
-      // Показываем оверлей затемнения
-      if (this.detailModeOverlay) {
-        this.detailModeOverlay.material.opacity = easedProgress * 0.8;
-      }
-
       // Создаем метки актеров в конце анимации
       if (progress >= 0.8 && this.detailModeActorLabels.length === 0) {
         this.createActorLabels();
@@ -1576,11 +1544,6 @@ export class DetailModeSystem {
         this.ringRays.scale.copy(currentScale);
       }
 
-      // Скрываем оверлей
-      if (this.detailModeOverlay) {
-        this.detailModeOverlay.material.opacity = (1 - easedProgress) * 0.8;
-      }
-
       // Скрываем метки актеров
       this.detailModeActorLabels.forEach(label => {
         if (label.sprite) {
@@ -1623,14 +1586,6 @@ export class DetailModeSystem {
    * Очистка режима детального просмотра
    */
   cleanup() {
-    // Удаляем оверлей
-    if (this.detailModeOverlay) {
-      this.scene.remove(this.detailModeOverlay);
-      this.detailModeOverlay.geometry.dispose();
-      this.detailModeOverlay.material.dispose();
-      this.detailModeOverlay = null;
-    }
-
     // Удаляем кнопку выхода
     if (this.detailModeExitButton) {
       document.body.removeChild(this.detailModeExitButton);
