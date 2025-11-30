@@ -49,8 +49,6 @@ export class NodeTextSize {
             : (isRoot ? 72 : 38);
         
         fontSize = Math.max(fontSize, minFontSize);
-
-        console.log(fontSize);
         
 
         return fontSize;

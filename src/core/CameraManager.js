@@ -48,7 +48,6 @@ export class CameraManager {
     
     // Устанавливаем начальную позицию
     this.updatePosition();
-    console.log('Zoom (initial):', this.currentZoom);
   }
 
   /**
@@ -110,7 +109,6 @@ export class CameraManager {
     
     this.currentZoom = closestStep;
     this.updatePosition();
-    console.log('Zoom:', this.currentZoom);
   }
 
   /**
@@ -149,7 +147,6 @@ export class CameraManager {
       this.currentZoomIndex++;
       this.currentZoom = CAMERA_ZOOM_STEPS[this.currentZoomIndex];
       this.updatePosition();
-      console.log('Zoom:', this.currentZoom);
     }
   }
 
@@ -163,7 +160,6 @@ export class CameraManager {
       this.currentZoomIndex--;
       this.currentZoom = CAMERA_ZOOM_STEPS[this.currentZoomIndex];
       this.updatePosition();
-      console.log('Zoom:', this.currentZoom);
     }
   }
 
@@ -254,7 +250,6 @@ export class CameraManager {
     
     // Обновляем позицию камеры
     this.updatePosition();
-    console.log('Zoom (reset):', this.currentZoom);
   }
 
   /**
