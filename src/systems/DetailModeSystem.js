@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { TextureGenerator } from '../utils/TextureGenerator.js';
-import { mockData } from '../mockData.js';
+import { mockData, forRootFirefly } from '../mockData.js';
 import { isMobileDevice } from '../utils/DeviceUtils.js';
 import {
   ROOT_RADIUS,
@@ -2027,6 +2027,113 @@ export class DetailModeSystem {
   }
 
   /**
+   * Создание текстовой метки из данных напрямую (без firefly)
+   * @param {Object} technologyData - Объект с данными технологии (должен содержать поле text)
+   * @param {THREE.Vector3} startPosition - Начальная позиция
+   * @param {THREE.Vector3} targetPosition - Финальная позиция слова
+   * @returns {Object} Объект с данными метки слова
+   */
+  createWordLabelFromData(technologyData, startPosition, targetPosition) {
+    if (!technologyData || !technologyData.text) {
+      return null;
+    }
+
+    const text = technologyData.text || '';
+
+    // Создаем текстовый спрайт
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    // Определяем мобильное устройство для уменьшения размера шрифта
+    const isMobile = isMobileDevice();
+    const fontSize = isMobile ? WORD_LABEL_FONT_SIZE * 0.7 : WORD_LABEL_FONT_SIZE; // Уменьшенный размер для мобильных (70% от оригинала)
+    const lineHeight = fontSize * 1.2; // Межстрочный интервал
+    context.font = `bold ${fontSize}px Arial`;
+
+    // Разбиваем текст на строки (максимум 1 слово в строке на мобильных, 2 на десктопе)
+    const maxWordsPerLine = isMobile ? 1 : 2;
+    const lines = this.splitTextIntoLines(text, maxWordsPerLine);
+
+    // Измеряем ширину каждой строки и находим максимальную
+    let maxTextWidth = 0;
+    lines.forEach(line => {
+      const metrics = context.measureText(line);
+      const width = metrics.width;
+      if (width > maxTextWidth) {
+        maxTextWidth = width;
+      }
+    });
+
+    // Рассчитываем реальную высоту текста
+    const totalTextHeight = lines.length * lineHeight - (lineHeight - fontSize);
+
+    // Рассчитываем размеры canvas на основе реального размера текста + отступы
+    // Используем максимальное значение между реальным размером и минимальным фиксированным размером
+    const minCanvasWidth = WORD_LABEL_CANVAS_WIDTH;
+    const minCanvasHeight = WORD_LABEL_CANVAS_HEIGHT;
+    
+    const canvasWidth = Math.max(minCanvasWidth, maxTextWidth + TEXT_PADDING * 2);
+    const canvasHeight = Math.max(minCanvasHeight, totalTextHeight + TEXT_PADDING * 2);
+
+    // Увеличиваем разрешение canvas для четкости
+    canvas.width = canvasWidth * TEXT_SCALE_FACTOR;
+    canvas.height = canvasHeight * TEXT_SCALE_FACTOR;
+    context.scale(TEXT_SCALE_FACTOR, TEXT_SCALE_FACTOR);
+
+    // Перерисовываем текст
+    context.fillStyle = TEXT_COLOR;
+    context.strokeStyle = TEXT_STROKE_COLOR;
+    context.lineWidth = TEXT_STROKE_WIDTH;
+    context.font = `bold ${fontSize}px Arial`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+
+    // Рисуем каждую строку с правильным вертикальным смещением внутри canvas
+    const centerX = canvasWidth / 2; // Центр по горизонтали
+    const canvasCenterY = canvasHeight / 2; // Центр canvas по вертикали
+    const startY = canvasCenterY - (totalTextHeight / 2) + (fontSize / 2);
+
+    lines.forEach((line, index) => {
+      const y = startY + index * lineHeight;
+      context.strokeText(line, centerX, y);
+      context.fillText(line, centerX, y);
+    });
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    const spriteMaterial = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0, // Начинаем с 0 для анимации
+      alphaTest: 0.1,
+      depthTest: false,
+      depthWrite: false
+    });
+
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.position.copy(startPosition); // Начинаем с начальной позиции
+    // Масштабируем спрайт пропорционально реальным размерам canvas
+    // Это гарантирует, что весь текст будет виден
+    sprite.scale.set(
+      canvasWidth * WORD_LABEL_SCALE_MULTIPLIER,
+      canvasHeight * WORD_LABEL_SCALE_MULTIPLIER,
+      1
+    );
+    sprite.renderOrder = 999; // Выше всех элементов
+
+    this.scene.add(sprite);
+
+    return {
+      sprite: sprite,
+      firefly: null, // Для root узла нет firefly
+      originalFireflyPosition: startPosition.clone(),
+      targetPosition: targetPosition.clone(),
+      technology: technologyData
+    };
+  }
+
+  /**
    * Превращение светлячков в слова
    * Создает текстовые метки из светлячков и запускает анимацию превращения
    */
@@ -2037,6 +2144,7 @@ export class DetailModeSystem {
 
     const nodeData = this.detailModeNode;
     const selectedNodeId = nodeData.node.id;
+    const isRoot = nodeData.node.level === 0;
 
     // Очищаем предыдущие метки слов, если они есть
     this.detailModeWordLabels.forEach(label => {
@@ -2048,12 +2156,28 @@ export class DetailModeSystem {
     });
     this.detailModeWordLabels = [];
 
-    // Находим все светлячки выбранного узла
-    const nodeFireflies = this.fireflies.filter(
-      firefly => firefly.mesh && firefly.nodeId === selectedNodeId && firefly.mesh.userData.technology
-    );
+    // Для root узла используем данные из forRootFirefly
+    let technologies = [];
+    let nodeFireflies = [];
+    
+    if (isRoot) {
+      // Фильтруем данные для root узла (parentId === 1)
+      technologies = forRootFirefly.filter(item => item.parentId === selectedNodeId);
+    } else {
+      // Для дочерних узлов используем светлячки
+      nodeFireflies = this.fireflies.filter(
+        firefly => firefly.mesh && firefly.nodeId === selectedNodeId && firefly.mesh.userData.technology
+      );
+      
+      if (nodeFireflies.length === 0) {
+        return;
+      }
+      
+      // Извлекаем технологии из светлячков
+      technologies = nodeFireflies.map(firefly => firefly.mesh.userData.technology);
+    }
 
-    if (nodeFireflies.length === 0) {
+    if (technologies.length === 0) {
       return;
     }
 
@@ -2080,7 +2204,7 @@ export class DetailModeSystem {
     const minDistance = Math.max(maxWordWidth, maxWordHeight) * 1.5;
 
     // Рассчитываем минимальный радиус для равномерного распределения
-    const wordCount = nodeFireflies.length;
+    const wordCount = technologies.length;
     const angleStep = (Math.PI * 2) / wordCount;
     
     // Функция для расчета расстояния между двумя точками на эллипсе
@@ -2140,8 +2264,8 @@ export class DetailModeSystem {
       iterations++;
     }
 
-    // Создаем метки слов для каждого светлячка
-    nodeFireflies.forEach((firefly, index) => {
+    // Создаем метки слов
+    technologies.forEach((technology, index) => {
       // Вычисляем позицию слова равномерно по эллипсу
       const angle = index * angleStep;
       
@@ -2152,11 +2276,21 @@ export class DetailModeSystem {
         .add(right.clone().multiplyScalar(circleX))
         .add(planeUp.clone().multiplyScalar(circleY));
 
-      // Получаем текущую позицию светлячка
-      const fireflyPosition = firefly.mesh.position.clone();
-
-      // Создаем метку слова
-      const wordLabel = this.createWordLabel(firefly, fireflyPosition, targetPosition);
+      let wordLabel = null;
+      
+      if (isRoot) {
+        // Для root узла используем данные напрямую, начальная позиция в центре
+        const startPosition = new THREE.Vector3(0, 0, 0);
+        wordLabel = this.createWordLabelFromData(technology, startPosition, targetPosition);
+      } else {
+        // Для дочерних узлов используем светлячки
+        const firefly = nodeFireflies[index];
+        if (firefly && firefly.mesh) {
+          const fireflyPosition = firefly.mesh.position.clone();
+          wordLabel = this.createWordLabel(firefly, fireflyPosition, targetPosition);
+        }
+      }
+      
       if (wordLabel) {
         this.detailModeWordLabels.push(wordLabel);
       }
@@ -2183,44 +2317,44 @@ export class DetailModeSystem {
       const easedProgress = this.easeInOut(progress);
 
       this.detailModeWordLabels.forEach((label) => {
-        if (!label.sprite || !label.firefly || !label.firefly.mesh) {
+        if (!label.sprite) {
           return;
         }
 
-        // Анимируем исчезновение светлячка
-        label.firefly.mesh.traverse((child) => {
-          if (child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach(mat => {
-                if (mat.opacity !== undefined) {
-                  mat.opacity = 1 - easedProgress;
+        // Анимируем исчезновение светлячка (только если он есть)
+        if (label.firefly && label.firefly.mesh) {
+          label.firefly.mesh.traverse((child) => {
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach(mat => {
+                  if (mat.opacity !== undefined) {
+                    mat.opacity = 1 - easedProgress;
+                  }
+                });
+              } else {
+                if (child.material.opacity !== undefined) {
+                  child.material.opacity = 1 - easedProgress;
                 }
-              });
-            } else {
-              if (child.material.opacity !== undefined) {
-                child.material.opacity = 1 - easedProgress;
               }
             }
-          }
-        });
-        label.firefly.mesh.visible = easedProgress < 1;
+          });
+          label.firefly.mesh.visible = easedProgress < 1;
+        }
 
         // Анимируем появление и перемещение слова
-        if (label.sprite) {
-          // Плавно перемещаем от позиции светлячка к финальной позиции
-          label.sprite.position.copy(
-            label.originalFireflyPosition.clone().lerp(label.targetPosition, easedProgress)
-          );
+        // Плавно перемещаем от начальной позиции к финальной позиции
+        label.sprite.position.copy(
+          label.originalFireflyPosition.clone().lerp(label.targetPosition, easedProgress)
+        );
 
-          // Плавно появляем слово
-          label.sprite.material.opacity = easedProgress;
-        }
+        // Плавно появляем слово
+        label.sprite.material.opacity = easedProgress;
       });
 
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        // Анимация завершена - скрываем светлячки полностью
+        // Анимация завершена - скрываем светлячки полностью (если они есть)
         this.detailModeWordLabels.forEach((label) => {
           if (label.firefly && label.firefly.mesh) {
             label.firefly.mesh.visible = false;
@@ -2284,7 +2418,17 @@ export class DetailModeSystem {
       const easedProgress = this.easeInOut(progress);
 
       this.detailModeWordLabels.forEach((label) => {
-        if (!label.sprite || !label.firefly || !label.firefly.mesh) {
+        if (!label.sprite) {
+          return;
+        }
+
+        // Для root узла просто скрываем слова (нет светлячков для показа)
+        if (!label.firefly || !label.firefly.mesh) {
+          // Плавно исчезаем слово и перемещаем к начальной позиции
+          label.sprite.position.copy(
+            label.targetPosition.clone().lerp(label.originalFireflyPosition, easedProgress)
+          );
+          label.sprite.material.opacity = 1 - easedProgress;
           return;
         }
 
@@ -2292,14 +2436,12 @@ export class DetailModeSystem {
         const currentFireflyPosition = label.firefly.mesh.position.clone();
 
         // Анимируем перемещение слова к позиции светлячка
-        if (label.sprite) {
-          label.sprite.position.copy(
-            label.targetPosition.clone().lerp(currentFireflyPosition, easedProgress)
-          );
+        label.sprite.position.copy(
+          label.targetPosition.clone().lerp(currentFireflyPosition, easedProgress)
+        );
 
-          // Плавно исчезаем слово
-          label.sprite.material.opacity = 1 - easedProgress;
-        }
+        // Плавно исчезаем слово
+        label.sprite.material.opacity = 1 - easedProgress;
 
         // Анимируем появление светлячка
         label.firefly.mesh.traverse((child) => {
