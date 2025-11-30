@@ -27,8 +27,9 @@ export const CAMERA_FOV = 75;                     // Поле зрения ка�
 export const CAMERA_NEAR = 0.1;                   // Ближняя плоскость отсечения
 export const CAMERA_FAR = 50000;                  // Дальняя плоскость отсечения
 export const CAMERA_INITIAL_POSITION = { x: 0, y: 800, z: 1000 }; // Начальная позиция камеры
-export const CAMERA_INITIAL_DISTANCE = 1500;      // Начальное расстояние камеры для обзора нескольких деревьев
-export const CAMERA_ZOOM_STEPS = [0.015, 0.02, 0.04, 0.06, 0.1, 0.15, 0.2, 0.35, 0.5, 0.7, 1.0, 2.2, 3.0];
+export const DETAIL_MODE_CAMERA_DISTANCE = 1500;  // Стандартное расстояние камеры для расчета масштаба узла в детальном режиме
+export const CAMERA_ZOOM_STEPS = [0.015, 0.02, 0.04, 0.06, 0.1, 0.12, 0.15, 0.2, 0.25, 0.30, 0.35, 0.4, 0.45, 0.5, 0.7, 1.0, 2.2, 3.0];
+export const CAMERA_ZOOM_DEFAULT_VALUE = CAMERA_ZOOM_STEPS[4];
 export const CAMERA_MIN_ZOOM = CAMERA_ZOOM_STEPS[0];               // Минимальный зум
 export const CAMERA_MAX_ZOOM = CAMERA_ZOOM_STEPS[CAMERA_ZOOM_STEPS.length - 1];                 // Максимальный зум
 

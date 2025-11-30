@@ -23,7 +23,7 @@ import {
     DETAIL_MODE_ANIMATION_TIME,
     DETAIL_MODE_ACTOR_RADIUS,
     ANIMATION_SPEED,
-    CAMERA_INITIAL_DISTANCE,
+    DETAIL_MODE_CAMERA_DISTANCE,
     CAMERA_FOV,
     ROOT_RADIUS,
     NODE_RADIUS,
@@ -89,7 +89,7 @@ class RadialTreeVisualization {
         this.cameraPosition = new THREE.Vector3(0, 800, 1000);
         this.cameraTarget = this.cameraManager.getTarget();
         this.currentZoom = this.cameraManager.getZoom();
-        this.initialCameraDistance = CAMERA_INITIAL_DISTANCE;
+        this.initialCameraDistance = DETAIL_MODE_CAMERA_DISTANCE;
         this.originalCameraPosition = null;
         this.originalCameraTarget = null;
         

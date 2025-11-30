@@ -7,6 +7,7 @@ import {
   CAMERA_ZOOM_STEPS,
   CAMERA_MIN_ZOOM,
   CAMERA_MAX_ZOOM,
+  CAMERA_ZOOM_DEFAULT_VALUE,
 } from '../utils/constants.js';
 
 /**
@@ -35,12 +36,11 @@ export class CameraManager {
     
     // Параметры зума
     // Фиксированные шаги зума: больше шагов в диапазоне < 1 (более чувствительно), меньше шагов в диапазоне > 2
-    this.zoomSteps = CAMERA_ZOOM_STEPS;
     this.minZoom = CAMERA_MIN_ZOOM;
     this.maxZoom = CAMERA_MAX_ZOOM;
-    this.currentZoom = CAMERA_ZOOM_STEPS[6];
+    this.currentZoom = CAMERA_ZOOM_DEFAULT_VALUE;
     // Находим индекс начального зума (0.2 находится на индексе 5)
-    this.currentZoomIndex = this.zoomSteps.indexOf(this.currentZoom);
+    this.currentZoomIndex = CAMERA_ZOOM_STEPS.indexOf(this.currentZoom);
     if (this.currentZoomIndex === -1) {
       // Если точного совпадения нет, используем индекс 5 (0.2)
       this.currentZoomIndex = 5;
@@ -48,6 +48,7 @@ export class CameraManager {
     
     // Устанавливаем начальную позицию
     this.updatePosition();
+    console.log('Zoom (initial):', this.currentZoom);
   }
 
   /**
@@ -95,20 +96,21 @@ export class CameraManager {
     const clampedZoom = THREE.MathUtils.clamp(zoom, this.minZoom, this.maxZoom);
     
     // Находим ближайший шаг
-    let closestStep = this.zoomSteps[0];
-    let minDiff = Math.abs(clampedZoom - this.zoomSteps[0]);
+    let closestStep = CAMERA_ZOOM_STEPS[0];
+    let minDiff = Math.abs(clampedZoom - CAMERA_ZOOM_STEPS[0]);
     
-    for (let i = 0; i < this.zoomSteps.length; i++) {
-      const diff = Math.abs(clampedZoom - this.zoomSteps[i]);
+    for (let i = 0; i < CAMERA_ZOOM_STEPS.length; i++) {
+      const diff = Math.abs(clampedZoom - CAMERA_ZOOM_STEPS[i]);
       if (diff < minDiff) {
         minDiff = diff;
-        closestStep = this.zoomSteps[i];
+        closestStep = CAMERA_ZOOM_STEPS[i];
         this.currentZoomIndex = i;
       }
     }
     
     this.currentZoom = closestStep;
     this.updatePosition();
+    console.log('Zoom:', this.currentZoom);
   }
 
   /**
@@ -124,10 +126,10 @@ export class CameraManager {
   getCurrentZoomIndex() {
     // Находим ближайший шаг к текущему зуму
     let closestIndex = 0;
-    let minDiff = Math.abs(this.currentZoom - this.zoomSteps[0]);
+    let minDiff = Math.abs(this.currentZoom - CAMERA_ZOOM_STEPS[0]);
     
-    for (let i = 1; i < this.zoomSteps.length; i++) {
-      const diff = Math.abs(this.currentZoom - this.zoomSteps[i]);
+    for (let i = 1; i < CAMERA_ZOOM_STEPS.length; i++) {
+      const diff = Math.abs(this.currentZoom - CAMERA_ZOOM_STEPS[i]);
       if (diff < minDiff) {
         minDiff = diff;
         closestIndex = i;
@@ -143,10 +145,11 @@ export class CameraManager {
    */
   zoomIn() {
     this.currentZoomIndex = this.getCurrentZoomIndex();
-    if (this.currentZoomIndex < this.zoomSteps.length - 1) {
+    if (this.currentZoomIndex < CAMERA_ZOOM_STEPS.length - 1) {
       this.currentZoomIndex++;
-      this.currentZoom = this.zoomSteps[this.currentZoomIndex];
+      this.currentZoom = CAMERA_ZOOM_STEPS[this.currentZoomIndex];
       this.updatePosition();
+      console.log('Zoom:', this.currentZoom);
     }
   }
 
@@ -158,8 +161,9 @@ export class CameraManager {
     this.currentZoomIndex = this.getCurrentZoomIndex();
     if (this.currentZoomIndex > 0) {
       this.currentZoomIndex--;
-      this.currentZoom = this.zoomSteps[this.currentZoomIndex];
+      this.currentZoom = CAMERA_ZOOM_STEPS[this.currentZoomIndex];
       this.updatePosition();
+      console.log('Zoom:', this.currentZoom);
     }
   }
 
@@ -181,11 +185,11 @@ export class CameraManager {
     // чтобы пользователь мог видеть всю сцену
     if (newMinZoom < previousMinZoom) {
       // Устанавливаем на минимальный доступный шаг
-      this.setZoom(this.zoomSteps[0]);
+      this.setZoom(CAMERA_ZOOM_STEPS[0]);
     } else if (this.currentZoom < this.minZoom) {
       // Корректируем текущий зум, если он меньше нового минимального значения
       // Устанавливаем на минимальный доступный шаг
-      this.setZoom(this.zoomSteps[0]);
+      this.setZoom(CAMERA_ZOOM_STEPS[0]);
     }
   }
 
@@ -245,11 +249,12 @@ export class CameraManager {
     this.cameraTarget.set(0, 0, 0);
     
     // Сброс зума в начальное значение
-    this.currentZoom = this.zoomSteps[6]; // 0.2
+    this.currentZoom = CAMERA_ZOOM_DEFAULT_VALUE;
     this.currentZoomIndex = 6;
     
     // Обновляем позицию камеры
     this.updatePosition();
+    console.log('Zoom (reset):', this.currentZoom);
   }
 
   /**
