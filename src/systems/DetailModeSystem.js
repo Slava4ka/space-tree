@@ -2553,7 +2553,10 @@ export class DetailModeSystem {
   updateNodeTextSprite(nodeData) {
     const node = nodeData.node;
     const isRoot = node.level === 0;
-    let fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+    // В детальном режиме для root узла используем размер дочерних узлов
+    let fontSize = this.isDetailMode && isRoot 
+      ? this.nodeTextSize 
+      : (isRoot ? this.rootTextSize : this.nodeTextSize);
     const MIN_FONT_SIZE = 32; // Минимальный размер шрифта
     const screenMargin = 20; // Отступ от краев экрана
 
@@ -2721,7 +2724,8 @@ export class DetailModeSystem {
   updateNodeTextSpriteForDetailMode(nodeData) {
     const node = nodeData.node;
     const isRoot = node.level === 0;
-    const fontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+    // В детальном режиме для root узла используем размер дочерних узлов
+    const fontSize = this.nodeTextSize; // Все узлы используют одинаковый размер в детальном режиме
     const lineHeight = fontSize * 1.2; // Межстрочный интервал
 
     // Увеличиваем масштаб для детального режима (в 2 раза больше для четкости)
