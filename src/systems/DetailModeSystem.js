@@ -2159,37 +2159,45 @@ export class DetailModeSystem {
     // Увеличиваем запас до 50% для гарантированного отсутствия пересечения
     const minDistance = Math.max(maxWordWidth, maxWordHeight) * 1.5;
 
+    // Рассчитываем текущий размер узла в детальном режиме
+    const baseNodeRadius = isRoot ? this.rootRadius : this.nodeRadius;
+    const nodeScale = nodeData.mesh ? nodeData.mesh.scale.x : 1.0;
+    const scaledNodeRadius = baseNodeRadius * nodeScale;
+    
+    // Минимальный радиус размещения надписей должен учитывать размер узла + отступ
+    // Отступ должен быть достаточным, чтобы надписи не залазили на узел
+    const nodeRadiusOffset = Math.max(maxWordWidth, maxWordHeight) * 1.2; // Увеличенный отступ от узла
+    const minRadiusFromNode = scaledNodeRadius + nodeRadiusOffset;
+
     // Рассчитываем минимальный радиус для равномерного распределения
     const wordCount = technologies.length;
     const angleStep = (Math.PI * 2) / wordCount;
     
-    // Функция для расчета расстояния между двумя точками на эллипсе
-    const distanceOnEllipse = (angle1, angle2, radiusX, radiusY) => {
-      const x1 = Math.cos(angle1) * radiusX;
-      const y1 = Math.sin(angle1) * radiusY;
-      const x2 = Math.cos(angle2) * radiusX;
-      const y2 = Math.sin(angle2) * radiusY;
-      return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    // Функция для расчета расстояния между двумя точками на круге
+    const distanceOnCircle = (angle1, angle2, radius) => {
+      // Используем формулу хорды: 2 * radius * sin(angleDiff / 2)
+      const angleDiff = Math.abs(angle2 - angle1);
+      const minAngleDiff = Math.min(angleDiff, 2 * Math.PI - angleDiff);
+      return 2 * radius * Math.sin(minAngleDiff / 2);
     };
     
-    // Находим оптимальные радиусы методом подбора
+    // Находим оптимальный радиус методом подбора
     // Ограничиваем максимальный радиус, чтобы блоки не выходили за экран
     // Определяем мобильное устройство для уменьшения радиуса
     const isMobile = isMobileDevice();
     const placementRadius = isRoot ? ROOT_WORD_LABEL_PLACEMENT_RADIUS : WORD_LABEL_PLACEMENT_RADIUS;
-    const radiusMultiplierX = isMobile ? 1.2 : 3.2; // Уменьшенный коэффициент для мобильных
-    const radiusMultiplierY = isMobile ? 1.7 : 2.7; // Уменьшенный коэффициент для мобильных
-    const maxRadiusX = placementRadius * radiusMultiplierX; // Максимальный горизонтальный радиус
-    const maxRadiusY = placementRadius * radiusMultiplierY; // Максимальный вертикальный радиус
+    const radiusMultiplier = isMobile ? 1.5 : 3.0; // Множитель для максимального радиуса
+    const maxRadius = placementRadius * radiusMultiplier; // Максимальный радиус
     
-    let ellipseRadiusX = Math.min(
-      maxRadiusX,
-      Math.max(placementRadius * 1.1, minDistance / (2 * Math.sin(angleStep / 2)))
-    );
-    let ellipseRadiusY = Math.min(
-      maxRadiusY,
-      Math.max(placementRadius * 0.85, minDistance / (2 * Math.sin(angleStep / 2)) * 0.75)
-    );
+    // Рассчитываем минимальный радиус на основе расстояния между надписями
+    const minRadiusFromSpacing = minDistance / (2 * Math.sin(angleStep / 2));
+    
+    // Используем максимальное значение из: минимальный радиус от узла, минимальный радиус от расстояния между надписями, и базовый placementRadius
+    // Это гарантирует, что надписи не залазят на узел даже при малом количестве надписей
+    const minRadius = Math.max(minRadiusFromNode, minRadiusFromSpacing, placementRadius * 1.1);
+    
+    // Начинаем с минимального радиуса, но он может увеличиться в цикле, если нужно больше места между надписями
+    let circleRadius = minRadius;
     
     // Проверяем расстояние между соседними надписями на всех позициях
     let allDistancesValid = false;
@@ -2199,22 +2207,20 @@ export class DetailModeSystem {
       for (let i = 0; i < wordCount; i++) {
         const angle1 = i * angleStep;
         const angle2 = ((i + 1) % wordCount) * angleStep;
-        const dist = distanceOnEllipse(angle1, angle2, ellipseRadiusX, ellipseRadiusY);
+        const dist = distanceOnCircle(angle1, angle2, circleRadius);
         
         if (dist < minDistance) {
           allDistancesValid = false;
-          // Увеличиваем радиусы пропорционально, но не превышаем максимум
+          // Увеличиваем радиус пропорционально, но не превышаем максимум и не опускаемся ниже минимума
           const scale = minDistance / dist;
-          const newRadiusX = Math.min(maxRadiusX, ellipseRadiusX * scale * 1.05);
-          const newRadiusY = Math.min(maxRadiusY, ellipseRadiusY * scale * 0.9);
+          const newRadius = Math.max(minRadius, Math.min(maxRadius, circleRadius * scale * 1.05));
           
-          if (newRadiusX === maxRadiusX && newRadiusY === maxRadiusY && dist < minDistance * 0.9) {
+          if (newRadius === maxRadius && dist < minDistance * 0.9) {
             // Если достигли максимума, но расстояние все еще недостаточно, увеличиваем minDistance
             break;
           }
           
-          ellipseRadiusX = newRadiusX;
-          ellipseRadiusY = newRadiusY;
+          circleRadius = newRadius;
           break;
         }
       }
@@ -2223,11 +2229,11 @@ export class DetailModeSystem {
 
     // Создаем метки слов
     technologies.forEach((technology, index) => {
-      // Вычисляем позицию слова равномерно по эллипсу
+      // Вычисляем позицию слова равномерно по кругу
       const angle = index * angleStep;
       
-      const circleX = Math.cos(angle) * ellipseRadiusX;
-      const circleY = Math.sin(angle) * ellipseRadiusY;
+      const circleX = Math.cos(angle) * circleRadius;
+      const circleY = Math.sin(angle) * circleRadius;
 
       const targetPosition = planeCenter.clone()
         .add(right.clone().multiplyScalar(circleX))
