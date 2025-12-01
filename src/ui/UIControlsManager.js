@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { debounce } from 'lodash';
-import { FIREFLY_CORE_SIZE_MULTIPLIER, SPHERE_SEGMENTS, SPHERE_RINGS } from '../utils/constants.js';
 import { isMobileDevice } from '../utils/DeviceUtils.js';
 
 /**

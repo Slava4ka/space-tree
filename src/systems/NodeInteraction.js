@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ROOT_RADIUS, NODE_RADIUS, EDGE_LINE_COLOR } from '../utils/constants.js';
+import { ROOT_RADIUS, NODE_RADIUS, EDGE_LINE_COLOR, CAMERA_INITIAL_POSITION, CAMERA_BASE_DISTANCE } from '../utils/constants.js';
 
 /**
  * Класс для обработки взаимодействий с узлами (клики, выделение)
@@ -198,8 +198,12 @@ export class NodeInteraction {
         
         // Вычисляем целевую позицию камеры (чтобы узел был в центре экрана)
         // При выборе узла ПРИБЛИЖАЕМ камеру (увеличиваем зум) - используем меньшее расстояние
-        const baseDirection = new THREE.Vector3(0, 800, 1000).normalize();
-        const baseDistance = Math.sqrt(800 * 800 + 1000 * 1000);
+        const baseDirection = new THREE.Vector3(
+          CAMERA_INITIAL_POSITION.x,
+          CAMERA_INITIAL_POSITION.y,
+          CAMERA_INITIAL_POSITION.z
+        ).normalize();
+        const baseDistance = CAMERA_BASE_DISTANCE;
         
         // При выборе узла применяем дополнительный зум для приближения
         // Используем зум 2x для приближения к узлу (можно настроить)
@@ -249,6 +253,11 @@ export class NodeInteraction {
         const selectedRadius = selectedNodeData.node.level === 0 ? this.rootRadius : this.nodeRadius;
         const selectedScaledRadius = selectedRadius * 2; // Увеличенный узел в 2 раза
         
+        // Обновляем матрицы один раз перед вычислением всех позиций (оптимизация)
+        if (selectedNodeData.mesh.parent) {
+            selectedNodeData.mesh.parent.updateMatrixWorld(true);
+        }
+        
         // Получаем мировую позицию выбранного узла
         const selectedWorldPos = new THREE.Vector3();
         selectedNodeData.mesh.getWorldPosition(selectedWorldPos);
@@ -256,12 +265,24 @@ export class NodeInteraction {
         // Находим все соседние узлы, которые могут пересекаться
         const nodesToPush = [];
         
+        // Кэшируем радиусы для оптимизации
+        const radiusCache = new Map();
+        
         this.nodeMeshes.forEach(otherNodeData => {
             // Пропускаем сам выбранный узел
             if (otherNodeData === selectedNodeData) return;
             
-            // Получаем радиус другого узла
-            const otherRadius = otherNodeData.node.level === 0 ? this.rootRadius : this.nodeRadius;
+            // Получаем радиус другого узла (с кэшированием)
+            let otherRadius = radiusCache.get(otherNodeData);
+            if (otherRadius === undefined) {
+                otherRadius = otherNodeData.node.level === 0 ? this.rootRadius : this.nodeRadius;
+                radiusCache.set(otherNodeData, otherRadius);
+            }
+            
+            // Обновляем матрицы родителя перед получением мировой позиции
+            if (otherNodeData.mesh.parent) {
+                otherNodeData.mesh.parent.updateMatrixWorld(true);
+            }
             
             // Получаем мировую позицию другого узла
             const otherWorldPos = new THREE.Vector3();

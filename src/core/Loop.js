@@ -17,15 +17,6 @@ export class Loop {
     this.updateCallbacks.push(callback);
   }
 
-  /**
-   * Удалить callback обновления
-   */
-  removeUpdateCallback(callback) {
-    const index = this.updateCallbacks.indexOf(callback);
-    if (index !== -1) {
-      this.updateCallbacks.splice(index, 1);
-    }
-  }
 
   /**
    * Запустить цикл

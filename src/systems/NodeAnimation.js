@@ -51,14 +51,24 @@ export class NodeAnimation {
             return;
         }
         
+        // Создаем Map для быстрого доступа к nodeMeshes по nodeId (O(1) вместо O(n))
+        // Пересоздаем только если nodeMeshes изменились
+        if (!this._nodeMeshesMap || this._nodeMeshesMapSize !== this.nodeMeshes.length) {
+            this._nodeMeshesMap = new Map();
+            this.nodeMeshes.forEach(nodeData => {
+                this._nodeMeshesMap.set(nodeData.node.id, nodeData);
+            });
+            this._nodeMeshesMapSize = this.nodeMeshes.length;
+        }
+        
         this.fireflies.forEach((firefly, index) => {
             if (!firefly.mesh) return;
             
             // Обновляем угол с учетом скорости
             firefly.angle += firefly.speed * 0.01;
             
-            // Находим узел для определения его радиуса
-            const nodeData = this.nodeMeshes.find(n => n.node.id === firefly.nodeId);
+            // Находим узел для определения его радиуса (O(1) вместо O(n))
+            const nodeData = this._nodeMeshesMap.get(firefly.nodeId);
             const detailModeNode = typeof this.detailModeNode === 'function' ? this.detailModeNode() : this.detailModeNode;
             const isDetailModeFirefly = this.isDetailMode() && 
                 detailModeNode && 
@@ -205,8 +215,12 @@ export class NodeAnimation {
 
     /**
      * Анимация отодвигания соседних узлов
+     * Оптимизировано: группирует обновления матриц
      */
     updatePushingNodes() {
+        // Собираем родительские группы для группового обновления матриц
+        const parentGroupsToUpdate = new Set();
+        
         this.nodeMeshes.forEach(nodeData => {
             if (nodeData.isPushing && nodeData.targetPushPosition) {
                 // Плавное перемещение узла
@@ -216,25 +230,19 @@ export class NodeAnimation {
                 if (nodeData.textSprite) {
                     const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * nodeData.mesh.scale.y;
 
-                    // Получаем мировую позицию узла
-                    const worldPos = new THREE.Vector3();
-                    nodeData.mesh.getWorldPosition(worldPos);
-
-                    // Преобразуем мировую позицию обратно в локальные координаты treeGroup
-                    const localPos = new THREE.Vector3();
-                    nodeData.treeGroup.worldToLocal(localPos.copy(worldPos));
-
-                    // Обновляем позицию спрайта в локальных координатах
+                    // Используем локальную позицию напрямую (оптимизация - избегаем getWorldPosition)
                     nodeData.textSprite.position.set(
-                        localPos.x,
-                        localPos.y + nodeRadius + TEXT_OFFSET_Y,
-                        localPos.z
+                        nodeData.mesh.position.x,
+                        nodeData.mesh.position.y + nodeRadius + TEXT_OFFSET_Y,
+                        nodeData.mesh.position.z
                     );
 
-                    // Принудительно обновляем матрицу спрайта
+                    // Обновляем матрицу спрайта
                     nodeData.textSprite.updateMatrix();
+                    
+                    // Собираем родительские группы для группового обновления
                     if (nodeData.textSprite.parent) {
-                        nodeData.textSprite.parent.updateMatrixWorld(true);
+                        parentGroupsToUpdate.add(nodeData.textSprite.parent);
                     }
                 }
 
@@ -251,10 +259,9 @@ export class NodeAnimation {
                             nodeData.mesh.position.y + nodeRadius + TEXT_OFFSET_Y,
                             nodeData.mesh.position.z
                         );
-                        // Принудительно обновляем матрицу спрайта и его родителя
                         nodeData.textSprite.updateMatrix();
                         if (nodeData.textSprite.parent) {
-                            nodeData.textSprite.parent.updateMatrixWorld(true);
+                            parentGroupsToUpdate.add(nodeData.textSprite.parent);
                         }
                     }
                     nodeData.isPushing = false;
@@ -262,19 +269,28 @@ export class NodeAnimation {
                 }
             }
         });
+        
+        // Групповое обновление матриц всех родительских групп (оптимизация)
+        parentGroupsToUpdate.forEach(parent => {
+            parent.updateMatrixWorld(true);
+        });
     }
 
     /**
      * Универсальное обновление позиций всех спрайтов каждый кадр
-     * Это гарантирует, что спрайты всегда синхронизированы с узлами
+     * Оптимизировано: обновляет только видимые спрайты и группирует обновления матриц
      */
     updateTextSprites() {
         const isDetailMode = typeof this.isDetailMode === 'function' ? this.isDetailMode() : this.isDetailMode;
         const detailModeNode = typeof this.detailModeNode === 'function' ? this.detailModeNode() : this.detailModeNode;
         const isMobile = isMobileDevice();
         
+        // Собираем все родительские группы для группового обновления матриц
+        const parentGroupsToUpdate = new Set();
+        
         this.nodeMeshes.forEach(nodeData => {
-            if (nodeData.textSprite && nodeData.mesh && !nodeData.isPushing) {
+            // Обновляем только видимые спрайты, которые не двигаются
+            if (nodeData.textSprite && nodeData.mesh && !nodeData.isPushing && nodeData.textSprite.visible) {
                 const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * nodeData.mesh.scale.y;
                 
                 // Для мобильных устройств в детальном режиме увеличиваем расстояние от текста до узла и добавляем отступ слева
@@ -288,12 +304,20 @@ export class NodeAnimation {
                     nodeData.mesh.position.y + nodeRadius + textOffset,
                     nodeData.mesh.position.z
                 );
-                // Принудительно обновляем матрицу спрайта для корректного отображения
+                
+                // Обновляем матрицу спрайта
                 nodeData.textSprite.updateMatrix();
+                
+                // Собираем родительские группы для группового обновления
                 if (nodeData.textSprite.parent) {
-                    nodeData.textSprite.parent.updateMatrixWorld(true);
+                    parentGroupsToUpdate.add(nodeData.textSprite.parent);
                 }
             }
+        });
+        
+        // Групповое обновление матриц всех родительских групп (оптимизация)
+        parentGroupsToUpdate.forEach(parent => {
+            parent.updateMatrixWorld(true);
         });
     }
 
@@ -304,6 +328,9 @@ export class NodeAnimation {
         this.nodeMeshes = nodeMeshes;
         this.fireflies = fireflies;
         this.selectedNode = selectedNode;
+        // Сбрасываем кэш Map при обновлении ссылок
+        this._nodeMeshesMap = null;
+        this._nodeMeshesMapSize = 0;
     }
 
     /**

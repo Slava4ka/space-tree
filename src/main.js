@@ -14,7 +14,10 @@ import { NodeInteraction } from './systems/NodeInteraction.js';
 import { NodeAnimation } from './systems/NodeAnimation.js';
 import { UIControlsManager } from './ui/UIControlsManager.js';
 import { BackgroundVideo } from './ui/BackgroundVideo.js';
+import { TextureGenerator } from './utils/TextureGenerator.js';
 import {
+    CAMERA_INITIAL_POSITION,
+    CAMERA_BASE_DISTANCE,
     FIREFLY_SIZE,
     FIREFLY_ORBIT_RADIUS,
     FIREFLY_ROTATION_SPEED,
@@ -27,8 +30,6 @@ import {
     CAMERA_FOV,
     ROOT_RADIUS,
     NODE_RADIUS,
-    ROOT_TEXT_SIZE,
-    NODE_TEXT_SIZE,
     MAX_WORDS_PER_LINE
 } from './utils/constants.js';
 
@@ -58,7 +59,6 @@ class RadialTreeVisualization {
         this.camera = this.cameraManager.getCamera();
         
         this.rendererManager = new RendererManager(this.container);
-        this.renderer = this.rendererManager.getRenderer();
         
         this.loop = new Loop();
         
@@ -70,8 +70,6 @@ class RadialTreeVisualization {
         // Параметры размеров узлов (динамические)
         this.rootRadius = ROOT_RADIUS;
         this.nodeRadius = NODE_RADIUS;
-        this.rootTextSize = ROOT_TEXT_SIZE;
-        this.nodeTextSize = NODE_TEXT_SIZE;
         this.maxWordsPerLine = MAX_WORDS_PER_LINE;
         
         // Параметры светлячков
@@ -86,7 +84,11 @@ class RadialTreeVisualization {
         this.DETAIL_MODE_ACTOR_RADIUS = DETAIL_MODE_ACTOR_RADIUS;
 
         // Переменные для управления камерой
-        this.cameraPosition = new THREE.Vector3(0, 800, 1000);
+        this.cameraPosition = new THREE.Vector3(
+          CAMERA_INITIAL_POSITION.x,
+          CAMERA_INITIAL_POSITION.y,
+          CAMERA_INITIAL_POSITION.z
+        );
         this.cameraTarget = this.cameraManager.getTarget();
         this.currentZoom = this.cameraManager.getZoom();
         this.initialCameraDistance = DETAIL_MODE_CAMERA_DISTANCE;
@@ -124,8 +126,9 @@ class RadialTreeVisualization {
     }
     
     init() {
-        // Обработка изменения размера окна
-        window.addEventListener('resize', () => this.onWindowResize());
+        // Обработка изменения размера окна (сохраняем ссылку для удаления)
+        this.handleResize = () => this.onWindowResize();
+        window.addEventListener('resize', this.handleResize);
         
         // Инициализация управления камерой мышью
         this.controls = new Controls(
@@ -456,8 +459,12 @@ class RadialTreeVisualization {
         // В режиме детального просмотра обновляем позицию камеры на основе зума
         if (this.isDetailMode) {
             // В режиме детализации камера смотрит на центр (0, 0, 0)
-            const baseDirection = new THREE.Vector3(0, 800, 1000).normalize();
-            const baseDistance = Math.sqrt(800 * 800 + 1000 * 1000);
+            const baseDirection = new THREE.Vector3(
+              CAMERA_INITIAL_POSITION.x,
+              CAMERA_INITIAL_POSITION.y,
+              CAMERA_INITIAL_POSITION.z
+            ).normalize();
+            const baseDistance = CAMERA_BASE_DISTANCE;
             const distance = baseDistance / this.currentZoom;
             const offset = baseDirection.clone().multiplyScalar(distance);
             
@@ -504,8 +511,12 @@ class RadialTreeVisualization {
             const worldPosition = new THREE.Vector3();
             nodeData.mesh.getWorldPosition(worldPosition);
             
-            const baseDirection = new THREE.Vector3(0, 800, 1000).normalize();
-            const baseDistance = Math.sqrt(800 * 800 + 1000 * 1000);
+            const baseDirection = new THREE.Vector3(
+              CAMERA_INITIAL_POSITION.x,
+              CAMERA_INITIAL_POSITION.y,
+              CAMERA_INITIAL_POSITION.z
+            ).normalize();
+            const baseDistance = CAMERA_BASE_DISTANCE;
             const zoomForNodeSelection = 2.0;
             const effectiveZoom = this.currentZoom * zoomForNodeSelection;
             const distance = baseDistance / effectiveZoom;
@@ -563,6 +574,42 @@ class RadialTreeVisualization {
         
         // Рендерим сцену
         this.rendererManager.render(this.scene, this.camera);
+    }
+    
+    /**
+     * Освобождение всех ресурсов для предотвращения утечек памяти
+     */
+    dispose() {
+        // Останавливаем анимационный цикл
+        if (this.loop) {
+            this.loop.stop();
+        }
+        
+        // Удаляем обработчик изменения размера окна
+        if (this.handleResize) {
+            window.removeEventListener('resize', this.handleResize);
+            this.handleResize = null;
+        }
+        
+        // Освобождаем ресурсы Controls
+        if (this.controls && typeof this.controls.dispose === 'function') {
+            this.controls.dispose();
+        }
+        
+        // Очищаем кэш текстур
+        if (this.treeRenderer) {
+            this.treeRenderer.disposeScene();
+        }
+        
+        // Очищаем кэш TextureGenerator
+        if (TextureGenerator && typeof TextureGenerator.clearCache === 'function') {
+            TextureGenerator.clearCache();
+        }
+        
+        // Освобождаем ресурсы рендерера
+        if (this.rendererManager && typeof this.rendererManager.dispose === 'function') {
+            this.rendererManager.dispose();
+        }
     }
 }
 

@@ -4,6 +4,7 @@ import {
   CAMERA_NEAR,
   CAMERA_FAR,
   CAMERA_INITIAL_POSITION,
+  CAMERA_BASE_DISTANCE,
   CAMERA_ZOOM_STEPS,
   CAMERA_MIN_ZOOM,
   CAMERA_MAX_ZOOM,
@@ -25,11 +26,7 @@ export class CameraManager {
       CAMERA_INITIAL_POSITION.z
     ).normalize();
     
-    this.baseDistance = Math.sqrt(
-      CAMERA_INITIAL_POSITION.x ** 2 + 
-      CAMERA_INITIAL_POSITION.y ** 2 + 
-      CAMERA_INITIAL_POSITION.z ** 2
-    );
+    this.baseDistance = CAMERA_BASE_DISTANCE; // Используем предвычисленную константу
     
     // Начальная цель - центр сцены
     this.cameraTarget = new THREE.Vector3(0, 0, 0);

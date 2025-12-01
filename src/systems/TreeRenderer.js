@@ -3,6 +3,10 @@ import { Firefly } from '../objects/Firefly.js';
 import { TreeBuilder } from './TreeBuilder.js';
 import { NodeTextVisibility } from '../utils/NodeTextVisibility.js';
 import { NodeTextSize } from '../utils/NodeTextSize.js';
+import { TextureGenerator } from '../utils/TextureGenerator.js';
+import { TextUtils } from '../utils/TextUtils.js';
+import { TextSpriteGenerator } from '../utils/TextSpriteGenerator.js';
+import { MaterialUtils } from '../utils/MaterialUtils.js';
 import {
     ROOT_RADIUS,
     NODE_RADIUS,
@@ -125,64 +129,32 @@ export class TreeRenderer {
         this.nodeMeshes.forEach(nodeData => {
             // Текстовый спрайт
             if (nodeData.textSprite) {
-                if (nodeData.textSprite.material) {
-                    if (nodeData.textSprite.material.map) {
-                        nodeData.textSprite.material.map.dispose();
-                    }
-                    nodeData.textSprite.material.dispose();
-                }
+                MaterialUtils.disposeObject(nodeData.textSprite);
             }
             
             // Основной меш
             if (nodeData.mesh) {
-                if (nodeData.mesh.geometry) nodeData.mesh.geometry.dispose();
-                
-                // Dispose материалов и их текстур
-                if (nodeData.mesh.material) {
-                    if (Array.isArray(nodeData.mesh.material)) {
-                        nodeData.mesh.material.forEach(m => {
-                            if (m.map) m.map.dispose();
-                            m.dispose();
-                        });
-                    } else {
-                        if (nodeData.mesh.material.map) {
-                            nodeData.mesh.material.map.dispose();
-                        }
-                        nodeData.mesh.material.dispose();
-                    }
-                }
+                MaterialUtils.disposeObject(nodeData.mesh);
                 
                 // Dispose детей (edges)
                 nodeData.mesh.children.forEach(child => {
-                    if (child.geometry) child.geometry.dispose();
-                    if (child.material) child.material.dispose();
+                    MaterialUtils.disposeObject(child);
                 });
             }
             
             // Оригинальные материалы (если есть)
             if (nodeData.originalMaterial) {
-                nodeData.originalMaterial.dispose();
+                MaterialUtils.disposeMaterial(nodeData.originalMaterial);
             }
             if (nodeData.highlightMaterial) {
-                nodeData.highlightMaterial.dispose();
+                MaterialUtils.disposeMaterial(nodeData.highlightMaterial);
             }
         });
         
         // 2. Очистка деревьев
         this.treeGroups.forEach(treeGroup => {
             treeGroup.traverse(child => {
-                if (child.geometry) child.geometry.dispose();
-                if (child.material) {
-                    if (Array.isArray(child.material)) {
-                        child.material.forEach(m => {
-                            if (m.map) m.map.dispose();
-                            m.dispose();
-                        });
-                    } else {
-                        if (child.material.map) child.material.map.dispose();
-                        child.material.dispose();
-                    }
-                }
+                MaterialUtils.disposeObject(child);
             });
             this.scene.remove(treeGroup);
         });
@@ -191,10 +163,19 @@ export class TreeRenderer {
         // ВАЖНО: НЕ dispose текстуры светлячков - они кэшированы!
         this.fireflies.forEach(firefly => {
             firefly.mesh.traverse(child => {
-                if (child.geometry) child.geometry.dispose();
+                // Dispose геометрии
+                if (child.geometry) {
+                    child.geometry.dispose();
+                }
+                // Dispose материала, но НЕ текстуры (она в кэше)
                 if (child.material) {
-                    // Dispose материала, но НЕ текстуры (она в кэше)
-                    child.material.dispose();
+                    // Не вызываем disposeMaterial, так как он dispose текстуры
+                    // Просто dispose материала без текстуры
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
                 }
             });
             this.scene.remove(firefly.mesh);
@@ -214,7 +195,12 @@ export class TreeRenderer {
         // 6. Очищаем кэш TreeBuilder
         this.treeBuilder.clearCache();
         
-        // 7. Вызываем callbacks для обновления ссылок
+        // 7. Очищаем кэш текстур TextureGenerator
+        if (TextureGenerator && typeof TextureGenerator.clearCache === 'function') {
+            TextureGenerator.clearCache();
+        }
+        
+        // 8. Вызываем callbacks для обновления ссылок
         this.onNodeMeshesUpdate(this.nodeMeshes);
         this.onTreeGroupsUpdate(this.treeGroups);
         this.onFirefliesUpdate(this.fireflies);
@@ -833,124 +819,30 @@ export class TreeRenderer {
         }
     }
 
-    /**
-     * Разбить текст на строки по максимальному количеству слов
-     * @param {string} text - Текст для разбиения
-     * @param {number} maxWordsPerLine - Максимальное количество слов в строке (0 или undefined = без ограничений)
-     * @returns {string[]} Массив строк
-     */
-    splitTextIntoLines(text, maxWordsPerLine) {
-        if (!text || !text.trim()) {
-            return [''];
-        }
-
-        // Если maxWordsPerLine = 0 или undefined, возвращаем весь текст одной строкой
-        if (!maxWordsPerLine || maxWordsPerLine <= 0) {
-            return [text.trim()];
-        }
-
-        // Разбиваем текст на слова по пробелам
-        const words = text.trim().split(/\s+/);
-        const lines = [];
-
-        // Группируем слова в строки по maxWordsPerLine
-        for (let i = 0; i < words.length; i += maxWordsPerLine) {
-            const line = words.slice(i, i + maxWordsPerLine).join(' ');
-            lines.push(line);
-        }
-
-        return lines;
-    }
 
     /**
      * Создание текстового спрайта для узла
      */
     createTextSprite(node, isRoot, radius) {
-        // Всегда создаем спрайты, видимость будет управляться в updateNodeTextSprite
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        
         // Базовый размер шрифта зависит от уровня и настроек
         const baseFontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
         
         // Рассчитываем размер шрифта на основе зума камеры
         const fontSize = this.textSizeCalculator.calculateFontSize(baseFontSize, isRoot, true);
         
-        const lineHeight = fontSize * 1.2; // Межстрочный интервал
-        context.font = `bold ${fontSize}px Arial`;
+        // Позиция спрайта
+        const position = node.position.clone();
+        position.y += radius + TEXT_OFFSET_Y;
         
-        // Разбиваем текст на строки
-        const lines = this.splitTextIntoLines(node.text, this.maxWordsPerLine);
-        
-        // Измеряем ширину каждой строки и находим максимальную
-        let maxTextWidth = 0;
-        const lineWidths = [];
-        lines.forEach(line => {
-            const metrics = context.measureText(line);
-            const width = metrics.width;
-            lineWidths.push(width);
-            if (width > maxTextWidth) {
-                maxTextWidth = width;
-            }
+        // Создаем спрайт через генератор
+        const sprite = TextSpriteGenerator.createTextSprite({
+            text: node.text,
+            fontSize: fontSize,
+            maxWordsPerLine: this.maxWordsPerLine,
+            position: position,
+            scaleMultiplier: 1.5,
+            visible: this.textVisibility.shouldShowText(isRoot)
         });
-        
-        // Рассчитываем размеры canvas
-        const textWidth = maxTextWidth;
-        const textHeight = lines.length * lineHeight - (lineHeight - fontSize); // Высота с учетом межстрочного интервала
-        
-        // Увеличиваем разрешение canvas для четкости при масштабировании
-        canvas.width = (textWidth + TEXT_PADDING) * TEXT_SCALE_FACTOR;
-        canvas.height = (textHeight + TEXT_PADDING) * TEXT_SCALE_FACTOR;
-
-        // Масштабируем контекст
-        context.scale(TEXT_SCALE_FACTOR, TEXT_SCALE_FACTOR);
-        
-        // Перерисовываем текст
-        context.fillStyle = TEXT_COLOR;
-        context.strokeStyle = TEXT_STROKE_COLOR;
-        context.lineWidth = TEXT_STROKE_WIDTH;
-        context.font = `bold ${fontSize}px Arial`;
-        context.textAlign = 'center';
-        context.textBaseline = 'middle'; // Центрируем по вертикали
-        
-        // Рисуем каждую строку с правильным вертикальным смещением
-        const centerX = (textWidth + TEXT_PADDING) / 2;
-        const canvasCenterY = (textHeight + TEXT_PADDING) / 2; // Центр canvas по вертикали
-        
-        // Рассчитываем начальную позицию Y для первой строки
-        // Чтобы весь текст был центрирован, первая строка должна быть выше центра
-        const totalTextHeight = lines.length * lineHeight - (lineHeight - fontSize);
-        const startY = canvasCenterY - (totalTextHeight / 2) + (fontSize / 2);
-        
-        lines.forEach((line, index) => {
-            const y = startY + index * lineHeight;
-            // Рисуем текст с обводкой
-            context.strokeText(line, centerX, y);
-            context.fillText(line, centerX, y);
-        });
-        
-        // Создаем текстуру из canvas
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
-        
-        // Создаем спрайт с текстом
-        const spriteMaterial = new THREE.SpriteMaterial({
-            map: texture,
-            transparent: true,
-            alphaTest: 0.1,
-            depthTest: false, // Отключаем depth test для отображения поверх всех объектов
-            depthWrite: false // Отключаем depth write для отображения поверх всех объектов
-        });
-        const sprite = new THREE.Sprite(spriteMaterial);
-        
-        // Позиционируем текст над сферой
-        sprite.position.copy(node.position);
-        sprite.position.y += radius + TEXT_OFFSET_Y;
-        sprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
-        sprite.renderOrder = 999; // Текст всегда поверх всех элементов
-        
-        // Устанавливаем начальную видимость на основе зума
-        sprite.visible = this.textVisibility.shouldShowText(isRoot);
         
         return sprite;
     }
@@ -1148,100 +1040,28 @@ export class TreeRenderer {
         // Если спрайт существует, показываем его и обновляем текстуру
         if (nodeData.textSprite) {
             nodeData.textSprite.visible = true;
-        }
-
-        // Создаем новую текстуру
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-
-        // Базовый размер шрифта зависит от уровня и настроек
-        const baseFontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
-        
-        // Рассчитываем размер шрифта на основе зума камеры
-        // Применяем только для общего вида (не в детальном режиме)
-        const isDetailMode = this.detailModeSystem && this.detailModeSystem.isActive();
-        const applyZoomScaling = !isDetailMode;
-        const fontSize = this.textSizeCalculator.calculateFontSize(baseFontSize, isRoot, applyZoomScaling);
-        
-        const lineHeight = fontSize * 1.2; // Межстрочный интервал
-        context.font = `bold ${fontSize}px Arial`;
-
-        // Разбиваем текст на строки
-        const lines = this.splitTextIntoLines(node.text, this.maxWordsPerLine);
-
-        // Измеряем ширину каждой строки и находим максимальную
-        let maxTextWidth = 0;
-        const lineWidths = [];
-        lines.forEach(line => {
-            const metrics = context.measureText(line);
-            const width = metrics.width;
-            lineWidths.push(width);
-            if (width > maxTextWidth) {
-                maxTextWidth = width;
-            }
-        });
-
-        // Рассчитываем размеры canvas
-        const textWidth = maxTextWidth;
-        const textHeight = lines.length * lineHeight - (lineHeight - fontSize); // Высота с учетом межстрочного интервала
-
-        // Увеличиваем разрешение canvas для четкости при масштабировании
-        canvas.width = (textWidth + TEXT_PADDING) * TEXT_SCALE_FACTOR;
-        canvas.height = (textHeight + TEXT_PADDING) * TEXT_SCALE_FACTOR;
-
-        // Масштабируем контекст
-        context.scale(TEXT_SCALE_FACTOR, TEXT_SCALE_FACTOR);
-
-        // Перерисовываем текст
-        context.fillStyle = TEXT_COLOR;
-        context.strokeStyle = TEXT_STROKE_COLOR;
-        context.lineWidth = TEXT_STROKE_WIDTH;
-        context.font = `bold ${fontSize}px Arial`;
-        context.textAlign = 'center';
-        context.textBaseline = 'middle'; // Центрируем по вертикали
-
-        // Рисуем каждую строку с правильным вертикальным смещением
-        const centerX = (textWidth + TEXT_PADDING) / 2;
-        const canvasCenterY = (textHeight + TEXT_PADDING) / 2; // Центр canvas по вертикали
-
-        // Рассчитываем начальную позицию Y для первой строки
-        // Чтобы весь текст был центрирован, первая строка должна быть выше центра
-        const totalTextHeight = lines.length * lineHeight - (lineHeight - fontSize);
-        const startY = canvasCenterY - (totalTextHeight / 2) + (fontSize / 2);
-
-        lines.forEach((line, index) => {
-            const y = startY + index * lineHeight;
-            // Рисуем текст с обводкой
-            context.strokeText(line, centerX, y);
-            context.fillText(line, centerX, y);
-        });
-
-        // Создаем текстуру из canvas
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
-
-        // Обновляем существующий спрайт
-        if (nodeData.textSprite) {
-            // Освобождаем старую текстуру
-            if (nodeData.textSprite.material.map) {
-                nodeData.textSprite.material.map.dispose();
-            }
-
-            // Устанавливаем новую текстуру
-            nodeData.textSprite.material.map = texture;
-            nodeData.textSprite.material.needsUpdate = true;
-
-            // Устанавливаем настройки для отображения поверх всех объектов
-            nodeData.textSprite.renderOrder = 999;
-            nodeData.textSprite.material.depthTest = false;
-            nodeData.textSprite.material.depthWrite = false;
+            
+            // Базовый размер шрифта зависит от уровня и настроек
+            const baseFontSize = isRoot ? this.rootTextSize : this.nodeTextSize;
+            
+            // Рассчитываем размер шрифта на основе зума камеры
+            // Применяем только для общего вида (не в детальном режиме)
+            const isDetailMode = this.detailModeSystem && this.detailModeSystem.isActive();
+            const applyZoomScaling = !isDetailMode;
+            const fontSize = this.textSizeCalculator.calculateFontSize(baseFontSize, isRoot, applyZoomScaling);
+            
+            // Обновляем текстуру спрайта через генератор
+            TextSpriteGenerator.updateTextSprite(
+                nodeData.textSprite,
+                node.text,
+                fontSize,
+                this.maxWordsPerLine,
+                1.5
+            );
             
             // Убеждаемся, что видимость соответствует текущему зуму
             nodeData.textSprite.visible = this.textVisibility.shouldShowText(isRoot);
-
-            // Рассчитываем новый масштаб
-            nodeData.textSprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
-
+            
             // Обновляем targetSpriteScale для анимаций
             nodeData.targetSpriteScale = nodeData.textSprite.scale.clone();
         }

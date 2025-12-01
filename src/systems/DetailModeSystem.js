@@ -6,6 +6,9 @@ import * as THREE from 'three';
 import { TextureGenerator } from '../utils/TextureGenerator.js';
 import { mockData, forRootFirefly } from '../mockData.js';
 import { isMobileDevice } from '../utils/DeviceUtils.js';
+import { TextUtils } from '../utils/TextUtils.js';
+import { TextSpriteGenerator } from '../utils/TextSpriteGenerator.js';
+import { MaterialUtils } from '../utils/MaterialUtils.js';
 import {
   ROOT_RADIUS,
   NODE_RADIUS,
@@ -122,26 +125,11 @@ export class DetailModeSystem {
         const originalVisible = object.visible;
         
         if (object.material) {
-          if (Array.isArray(object.material)) {
-            const states = object.material.map(mat => ({
-              opacity: mat.opacity,
-              transparent: mat.transparent,
-              depthTest: mat.depthTest,
-              depthWrite: mat.depthWrite
-            }));
-            this.detailModeOriginalObjectStates.set(object, { 
-              materials: states,
-              visible: originalVisible
-            });
-          } else {
-            this.detailModeOriginalObjectStates.set(object, {
-              opacity: object.material.opacity,
-              transparent: object.material.transparent,
-              depthTest: object.material.depthTest,
-              depthWrite: object.material.depthWrite,
-              visible: originalVisible
-            });
-          }
+          const materialState = MaterialUtils.saveMaterialState(object.material, false);
+          this.detailModeOriginalObjectStates.set(object, { 
+            ...materialState,
+            visible: originalVisible
+          });
         } else {
           // Сохраняем видимость даже если нет материала
           this.detailModeOriginalObjectStates.set(object, {
@@ -457,15 +445,7 @@ export class DetailModeSystem {
           if (object === selectedMesh || object === selectedTextSprite) {
             object.visible = true;
             if (object.material) {
-              if (Array.isArray(object.material)) {
-                object.material.forEach(mat => {
-                  mat.opacity = 1;
-                  mat.transparent = false;
-                });
-              } else {
-                object.material.opacity = 1;
-                object.material.transparent = false;
-              }
+              MaterialUtils.setMaterialOpacity(object.material, 1, false);
             }
             return;
           }
@@ -527,15 +507,7 @@ export class DetailModeSystem {
           object.visible = false;
           
           if (object.material) {
-            if (Array.isArray(object.material)) {
-              object.material.forEach(mat => {
-                mat.opacity = 0;
-                mat.transparent = true;
-              });
-            } else {
-              object.material.opacity = 0;
-              object.material.transparent = true;
-            }
+            MaterialUtils.setMaterialOpacity(object.material, 0, true);
           }
         });
         } else {
@@ -549,15 +521,7 @@ export class DetailModeSystem {
           object.visible = false;
             
             if (object.material) {
-              if (Array.isArray(object.material)) {
-                object.material.forEach(mat => {
-                mat.opacity = 0;
-                  mat.transparent = true;
-                });
-              } else {
-              object.material.opacity = 0;
-                object.material.transparent = true;
-              }
+              MaterialUtils.setMaterialOpacity(object.material, 0, true);
             }
           });
         }
@@ -568,15 +532,7 @@ export class DetailModeSystem {
       if (firefly.mesh && firefly.nodeId !== selectedNodeId) {
         firefly.mesh.visible = false;
         if (firefly.mesh.material) {
-          if (Array.isArray(firefly.mesh.material)) {
-            firefly.mesh.material.forEach(mat => {
-              mat.opacity = 0;
-              mat.transparent = true;
-            });
-          } else {
-            firefly.mesh.material.opacity = 0;
-            firefly.mesh.material.transparent = true;
-          }
+          MaterialUtils.setMaterialOpacity(firefly.mesh.material, 0, true);
         }
       }
     });
@@ -628,15 +584,7 @@ export class DetailModeSystem {
       selectedMesh.visible = true;
       selectedMesh.renderOrder = 100; // Убеждаемся, что renderOrder правильный
       if (selectedMesh.material) {
-        if (Array.isArray(selectedMesh.material)) {
-          selectedMesh.material.forEach(mat => {
-            mat.opacity = 1;
-            mat.transparent = false;
-          });
-        } else {
-          selectedMesh.material.opacity = 1;
-          selectedMesh.material.transparent = false;
-        }
+        MaterialUtils.setMaterialOpacity(selectedMesh.material, 1, false);
       }
       
       // Показываем все дочерние элементы выбранного узла
@@ -659,23 +607,11 @@ export class DetailModeSystem {
           }
         }
         if (child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach(mat => {
-              mat.opacity = 1;
-              mat.transparent = false;
-              // Убеждаемся, что материалы дочерних элементов не перекрывают текст
-              if (mat.depthTest !== undefined) {
-                mat.depthTest = true; // Включаем depth test для дочерних элементов
-              }
-            });
-          } else {
-            child.material.opacity = 1;
-            child.material.transparent = false;
-            // Убеждаемся, что материалы дочерних элементов не перекрывают текст
-            if (child.material.depthTest !== undefined) {
-              child.material.depthTest = true; // Включаем depth test для дочерних элементов
-            }
-          }
+          MaterialUtils.setMaterialProperties(child.material, {
+            opacity: 1,
+            transparent: false,
+            depthTest: true // Включаем depth test для дочерних элементов
+          });
         }
       });
 
@@ -684,21 +620,13 @@ export class DetailModeSystem {
         selectedTextSprite.visible = progress >= 1; // Показываем только после завершения анимации
         selectedTextSprite.renderOrder = 999; // Убеждаемся, что renderOrder правильный для текста
         if (selectedTextSprite.material) {
-          if (Array.isArray(selectedTextSprite.material)) {
-            selectedTextSprite.material.forEach(mat => {
-              mat.opacity = 1;
-              mat.transparent = true; // Включаем прозрачность для правильного отображения поверх узлов
-              mat.depthTest = false; // Отключаем depth test для текста в режиме детализации
-              mat.depthWrite = false;
-              mat.alphaTest = 0.1;
-            });
-          } else {
-            selectedTextSprite.material.opacity = 1;
-            selectedTextSprite.material.transparent = true; // Включаем прозрачность для правильного отображения поверх узлов
-            selectedTextSprite.material.depthTest = false; // Отключаем depth test для текста в режиме детализации
-            selectedTextSprite.material.depthWrite = false;
-            selectedTextSprite.material.alphaTest = 0.1;
-          }
+          MaterialUtils.setMaterialProperties(selectedTextSprite.material, {
+            opacity: 1,
+            transparent: true, // Включаем прозрачность для правильного отображения поверх узлов
+            depthTest: false, // Отключаем depth test для текста в режиме детализации
+            depthWrite: false,
+            alphaTest: 0.1
+          });
         }
       }
       // Показываем неоновое кольцо выбранного узла
@@ -724,15 +652,7 @@ export class DetailModeSystem {
           firefly.mesh.renderOrder = 300; // Убеждаемся, что renderOrder правильный для светлячков
           firefly.mesh.traverse((child) => {
             if (child.material) {
-              if (Array.isArray(child.material)) {
-                child.material.forEach(mat => {
-                  mat.opacity = 1;
-                  mat.transparent = false;
-                });
-              } else {
-                child.material.opacity = 1;
-                child.material.transparent = false;
-              }
+              MaterialUtils.setMaterialOpacity(child.material, 1, false);
             }
           });
         }
@@ -742,36 +662,20 @@ export class DetailModeSystem {
       // поэтому здесь только анимируем выбранный узел
       selectedMesh.visible = true;
       if (selectedMesh.material) {
-        if (Array.isArray(selectedMesh.material)) {
-          selectedMesh.material.forEach(mat => {
-            mat.opacity = 1;
-            mat.transparent = false;
-          });
-        } else {
-          selectedMesh.material.opacity = 1;
-          selectedMesh.material.transparent = false;
-        }
+        MaterialUtils.setMaterialOpacity(selectedMesh.material, 1, false);
       }
       
       // Скрываем текст во время анимации, показываем только после завершения
       if (selectedTextSprite) {
         selectedTextSprite.visible = progress >= 1; // Показываем только после завершения анимации
         if (selectedTextSprite.material) {
-          if (Array.isArray(selectedTextSprite.material)) {
-            selectedTextSprite.material.forEach(mat => {
-              mat.opacity = 1;
-              mat.transparent = true; // Включаем прозрачность для правильного отображения поверх узлов
-              mat.depthTest = false;
-              mat.depthWrite = false;
-              mat.alphaTest = 0.1;
-            });
-          } else {
-            selectedTextSprite.material.opacity = 1;
-            selectedTextSprite.material.transparent = true; // Включаем прозрачность для правильного отображения поверх узлов
-            selectedTextSprite.material.depthTest = false;
-            selectedTextSprite.material.depthWrite = false;
-            selectedTextSprite.material.alphaTest = 0.1;
-          }
+          MaterialUtils.setMaterialProperties(selectedTextSprite.material, {
+            opacity: 1,
+            transparent: true, // Включаем прозрачность для правильного отображения поверх узлов
+            depthTest: false,
+            depthWrite: false,
+            alphaTest: 0.1
+          });
         }
       }
       
@@ -779,15 +683,7 @@ export class DetailModeSystem {
       selectedMesh.traverse((child) => {
         child.visible = true;
         if (child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach(mat => {
-              mat.opacity = 1;
-              mat.transparent = false;
-            });
-          } else {
-            child.material.opacity = 1;
-            child.material.transparent = false;
-          }
+          MaterialUtils.setMaterialOpacity(child.material, 1, false);
         }
       });
 
@@ -880,15 +776,7 @@ export class DetailModeSystem {
           firefly.mesh.traverse((child) => {
             child.visible = true;
             if (child.material) {
-              if (Array.isArray(child.material)) {
-                child.material.forEach(mat => {
-                  mat.opacity = 1;
-                  mat.transparent = false;
-                });
-              } else {
-                child.material.opacity = 1;
-                child.material.transparent = false;
-              }
+              MaterialUtils.setMaterialOpacity(child.material, 1, false);
             }
           });
           
@@ -1042,30 +930,14 @@ export class DetailModeSystem {
     if (selectedMesh) {
       selectedMesh.visible = true;
       if (selectedMesh.material) {
-        if (Array.isArray(selectedMesh.material)) {
-          selectedMesh.material.forEach(mat => {
-            mat.opacity = 1.0;
-            mat.transparent = false;
-          });
-        } else {
-          selectedMesh.material.opacity = 1.0;
-          selectedMesh.material.transparent = false;
-        }
+        MaterialUtils.setMaterialOpacity(selectedMesh.material, 1.0, false);
       }
       // Убеждаемся, что все дочерние элементы видны
       selectedMesh.traverse((child) => {
         if (child !== selectedMesh) {
           child.visible = true;
           if (child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach(mat => {
-                mat.opacity = 1.0;
-                mat.transparent = false;
-              });
-            } else {
-              child.material.opacity = 1.0;
-              child.material.transparent = false;
-            }
+            MaterialUtils.setMaterialOpacity(child.material, 1.0, false);
           }
         }
       });
@@ -1104,15 +976,7 @@ export class DetailModeSystem {
       selectedMesh.visible = true;
       // Убеждаемся, что материал узла видим и непрозрачный
       if (selectedMesh.material) {
-        if (Array.isArray(selectedMesh.material)) {
-          selectedMesh.material.forEach(mat => {
-            mat.opacity = 1.0;
-            mat.transparent = false;
-          });
-        } else {
-          selectedMesh.material.opacity = 1.0;
-          selectedMesh.material.transparent = false;
-        }
+        MaterialUtils.setMaterialOpacity(selectedMesh.material, 1.0, false);
       }
       
       // Убеждаемся, что все дочерние элементы узла видны
@@ -1120,15 +984,7 @@ export class DetailModeSystem {
         if (child !== selectedMesh) {
           child.visible = true;
           if (child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach(mat => {
-                mat.opacity = 1.0;
-                mat.transparent = false;
-              });
-            } else {
-              child.material.opacity = 1.0;
-              child.material.transparent = false;
-            }
+            MaterialUtils.setMaterialOpacity(child.material, 1.0, false);
           }
         }
       });
@@ -1148,28 +1004,12 @@ export class DetailModeSystem {
       if (nodeData.neonRing) {
         nodeData.neonRing.visible = true;
         if (nodeData.neonRing.material) {
-          if (Array.isArray(nodeData.neonRing.material)) {
-            nodeData.neonRing.material.forEach(mat => {
-              mat.opacity = 1.0;
-              mat.transparent = false;
-            });
-          } else {
-            nodeData.neonRing.material.opacity = 1.0;
-            nodeData.neonRing.material.transparent = false;
-          }
+          MaterialUtils.setMaterialOpacity(nodeData.neonRing.material, 1.0, false);
         }
         nodeData.neonRing.traverse((child) => {
           child.visible = true;
           if (child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach(mat => {
-                mat.opacity = 1.0;
-                mat.transparent = false;
-              });
-            } else {
-              child.material.opacity = 1.0;
-              child.material.transparent = false;
-            }
+            MaterialUtils.setMaterialOpacity(child.material, 1.0, false);
           }
         });
       }
@@ -1220,15 +1060,7 @@ export class DetailModeSystem {
             
             // Плавно восстанавливаем opacity для остальных объектов
             if (object.material) {
-              if (Array.isArray(object.material)) {
-                object.material.forEach(mat => {
-                  mat.opacity = graphOpacity;
-                  mat.transparent = graphOpacity < 1;
-                });
-              } else {
-                object.material.opacity = graphOpacity;
-                object.material.transparent = graphOpacity < 1;
-              }
+              MaterialUtils.setMaterialOpacity(object.material, graphOpacity, graphOpacity < 1);
             }
           });
         });
@@ -1238,15 +1070,7 @@ export class DetailModeSystem {
           if (firefly.mesh) {
             firefly.mesh.visible = true;
             if (firefly.mesh.material) {
-              if (Array.isArray(firefly.mesh.material)) {
-                firefly.mesh.material.forEach(mat => {
-                  mat.opacity = graphOpacity;
-                  mat.transparent = graphOpacity < 1;
-                });
-              } else {
-                firefly.mesh.material.opacity = graphOpacity;
-                firefly.mesh.material.transparent = graphOpacity < 1;
-              }
+              MaterialUtils.setMaterialOpacity(firefly.mesh.material, graphOpacity, graphOpacity < 1);
             }
           }
         });
@@ -1285,15 +1109,7 @@ export class DetailModeSystem {
             object.visible = false;
             
             if (object.material) {
-              if (Array.isArray(object.material)) {
-                object.material.forEach(mat => {
-                  mat.opacity = 0;
-                  mat.transparent = true;
-                });
-              } else {
-                object.material.opacity = 0;
-                object.material.transparent = true;
-              }
+              MaterialUtils.setMaterialOpacity(object.material, 0, true);
             }
           });
         });
@@ -1303,15 +1119,7 @@ export class DetailModeSystem {
           if (firefly.mesh && firefly.nodeId !== nodeData.node.id) {
             firefly.mesh.visible = false;
             if (firefly.mesh.material) {
-              if (Array.isArray(firefly.mesh.material)) {
-                firefly.mesh.material.forEach(mat => {
-                  mat.opacity = 0;
-                  mat.transparent = true;
-                });
-              } else {
-                firefly.mesh.material.opacity = 0;
-                firefly.mesh.material.transparent = true;
-              }
+              MaterialUtils.setMaterialOpacity(firefly.mesh.material, 0, true);
             }
           }
         });
@@ -1329,15 +1137,7 @@ export class DetailModeSystem {
       // УБЕЖДАЕМСЯ, ЧТО УЗЕЛ ВИДЕН - устанавливаем видимость и материал КАЖДЫЙ КАДР
       selectedMesh.visible = true;
       if (selectedMesh.material) {
-        if (Array.isArray(selectedMesh.material)) {
-          selectedMesh.material.forEach(mat => {
-            mat.opacity = 1.0;
-            mat.transparent = false;
-          });
-        } else {
-          selectedMesh.material.opacity = 1.0;
-          selectedMesh.material.transparent = false;
-        }
+        MaterialUtils.setMaterialOpacity(selectedMesh.material, 1.0, false);
       }
       
       // Убеждаемся, что все дочерние элементы узла видны (включая shell, wireLines и т.д.)
@@ -1345,15 +1145,7 @@ export class DetailModeSystem {
         if (child !== selectedMesh) {
           child.visible = true;
           if (child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach(mat => {
-                mat.opacity = 1.0;
-                mat.transparent = false;
-              });
-            } else {
-              child.material.opacity = 1.0;
-              child.material.transparent = false;
-            }
+            MaterialUtils.setMaterialOpacity(child.material, 1.0, false);
           }
         }
       });
@@ -1362,28 +1154,12 @@ export class DetailModeSystem {
       if (nodeData.neonRing) {
         nodeData.neonRing.visible = true;
         if (nodeData.neonRing.material) {
-          if (Array.isArray(nodeData.neonRing.material)) {
-            nodeData.neonRing.material.forEach(mat => {
-              mat.opacity = 1.0;
-              mat.transparent = false;
-            });
-          } else {
-            nodeData.neonRing.material.opacity = 1.0;
-            nodeData.neonRing.material.transparent = false;
-          }
+          MaterialUtils.setMaterialOpacity(nodeData.neonRing.material, 1.0, false);
         }
         nodeData.neonRing.traverse((child) => {
           child.visible = true;
           if (child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach(mat => {
-                mat.opacity = 1.0;
-                mat.transparent = false;
-              });
-            } else {
-              child.material.opacity = 1.0;
-              child.material.transparent = false;
-            }
+            MaterialUtils.setMaterialOpacity(child.material, 1.0, false);
           }
         });
       }
@@ -1405,20 +1181,8 @@ export class DetailModeSystem {
           const originalMeshState = this.detailModeOriginalObjectStates.get(selectedMesh);
           if (originalMeshState) {
             if (selectedMesh.material) {
-              if (Array.isArray(selectedMesh.material) && originalMeshState.materials) {
-                selectedMesh.material.forEach((mat, index) => {
-                  if (originalMeshState.materials[index]) {
-                    mat.opacity = originalMeshState.materials[index].opacity;
-                    mat.transparent = originalMeshState.materials[index].transparent;
-                    mat.depthTest = originalMeshState.materials[index].depthTest;
-                    mat.depthWrite = originalMeshState.materials[index].depthWrite;
-                  }
-                });
-              } else if (!Array.isArray(selectedMesh.material)) {
-                selectedMesh.material.opacity = originalMeshState.opacity;
-                selectedMesh.material.transparent = originalMeshState.transparent;
-                selectedMesh.material.depthTest = originalMeshState.depthTest;
-                selectedMesh.material.depthWrite = originalMeshState.depthWrite;
+              if (selectedMesh.material && originalMeshState) {
+                MaterialUtils.restoreMaterialState(selectedMesh.material, originalMeshState);
               }
             }
           }
@@ -1440,28 +1204,13 @@ export class DetailModeSystem {
               // Восстанавливаем исходные значения opacity и transparent
               if (originalState) {
                 if (object.material) {
-                  if (Array.isArray(object.material) && originalState.materials) {
-                    object.material.forEach((mat, index) => {
-                      if (originalState.materials[index]) {
-                        mat.opacity = originalState.materials[index].opacity;
-                        mat.transparent = originalState.materials[index].transparent;
-                        mat.depthTest = originalState.materials[index].depthTest;
-                        mat.depthWrite = originalState.materials[index].depthWrite;
-                      }
-                    });
-                  } else if (!Array.isArray(object.material)) {
-                    object.material.opacity = originalState.opacity;
-                    object.material.transparent = originalState.transparent;
-                    object.material.depthTest = originalState.depthTest;
-                    object.material.depthWrite = originalState.depthWrite;
+                  if (object.material && originalState) {
+                    MaterialUtils.restoreMaterialState(object.material, originalState);
                   }
                 }
                 
-                if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial) {
-                  object.material.opacity = originalState.opacity;
-                  object.material.transparent = originalState.transparent;
-                  object.material.depthTest = originalState.depthTest;
-                  object.material.depthWrite = originalState.depthWrite;
+                if (object instanceof THREE.Sprite && object.material instanceof THREE.SpriteMaterial && originalState) {
+                  MaterialUtils.restoreMaterialState(object.material, originalState);
                 }
               }
             });
@@ -1611,8 +1360,7 @@ export class DetailModeSystem {
     this.detailModeActorLabels.forEach(label => {
       if (label.sprite) {
         this.scene.remove(label.sprite);
-        label.sprite.geometry.dispose();
-        label.sprite.material.dispose();
+        MaterialUtils.disposeObject(label.sprite);
       }
     });
     this.detailModeActorLabels = [];
@@ -1621,15 +1369,7 @@ export class DetailModeSystem {
     this.detailModeWordLabels.forEach(label => {
       if (label.sprite) {
         this.scene.remove(label.sprite);
-        if (label.sprite.geometry) {
-          label.sprite.geometry.dispose();
-        }
-        if (label.sprite.material) {
-          if (label.sprite.material.map) {
-            label.sprite.material.map.dispose();
-          }
-          label.sprite.material.dispose();
-        }
+        MaterialUtils.disposeObject(label.sprite);
       }
     });
     this.detailModeWordLabels = [];
@@ -1639,8 +1379,7 @@ export class DetailModeSystem {
     // Удаляем лучи вокруг кольца
     if (this.ringRays) {
       this.scene.remove(this.ringRays);
-      this.ringRays.geometry.dispose();
-      this.ringRays.material.dispose();
+      MaterialUtils.disposeObject(this.ringRays);
       this.ringRays = null;
     }
 
@@ -1660,20 +1399,8 @@ export class DetailModeSystem {
           // Восстанавливаем исходные значения opacity и transparent
           if (originalState) {
             if (object.material) {
-              if (Array.isArray(object.material) && originalState.materials) {
-                object.material.forEach((mat, index) => {
-                  if (originalState.materials[index]) {
-                    mat.opacity = originalState.materials[index].opacity;
-                    mat.transparent = originalState.materials[index].transparent;
-                    mat.depthTest = originalState.materials[index].depthTest;
-                    mat.depthWrite = originalState.materials[index].depthWrite;
-                  }
-                });
-              } else if (!Array.isArray(object.material)) {
-                object.material.opacity = originalState.opacity;
-                object.material.transparent = originalState.transparent;
-                object.material.depthTest = originalState.depthTest;
-                object.material.depthWrite = originalState.depthWrite;
+              if (object.material && originalState) {
+                MaterialUtils.restoreMaterialState(object.material, originalState);
               }
             }
             
@@ -1687,15 +1414,7 @@ export class DetailModeSystem {
           } else {
             // Если не нашли сохраненное состояние, устанавливаем значения по умолчанию
             if (object.material) {
-              if (Array.isArray(object.material)) {
-                object.material.forEach(mat => {
-                  mat.opacity = 1.0;
-                  mat.transparent = false;
-                });
-              } else {
-                object.material.opacity = 1.0;
-                object.material.transparent = false;
-              }
+            MaterialUtils.setMaterialOpacity(object.material, 1.0, false);
             }
           }
         });
@@ -1915,7 +1634,7 @@ export class DetailModeSystem {
 
     // Разбиваем текст на строки (максимум 1 слово в строке на мобильных, 2 на десктопе)
     const maxWordsPerLine = isMobile ? 1 : 2;
-    const lines = this.splitTextIntoLines(text, maxWordsPerLine);
+    const lines = TextUtils.splitTextIntoLines(text, maxWordsPerLine);
 
     // Измеряем ширину каждой строки и находим максимальную
     let maxTextWidth = 0;
@@ -2022,7 +1741,7 @@ export class DetailModeSystem {
 
     // Разбиваем текст на строки (максимум 1 слово в строке на мобильных, 2 на десктопе)
     const maxWordsPerLine = isMobile ? 1 : 2;
-    const lines = this.splitTextIntoLines(text, maxWordsPerLine);
+    const lines = TextUtils.splitTextIntoLines(text, maxWordsPerLine);
 
     // Измеряем ширину каждой строки и находим максимальную
     let maxTextWidth = 0;
@@ -2396,17 +2115,7 @@ export class DetailModeSystem {
         if (label.firefly && label.firefly.mesh) {
           label.firefly.mesh.traverse((child) => {
             if (child.material) {
-              if (Array.isArray(child.material)) {
-                child.material.forEach(mat => {
-                  if (mat.opacity !== undefined) {
-                    mat.opacity = 1 - easedProgress;
-                  }
-                });
-              } else {
-                if (child.material.opacity !== undefined) {
-                  child.material.opacity = 1 - easedProgress;
-                }
-              }
+              MaterialUtils.setMaterialOpacity(child.material, 1 - easedProgress, true);
             }
           });
           label.firefly.mesh.visible = easedProgress < 1;
@@ -2433,17 +2142,7 @@ export class DetailModeSystem {
               // Скрываем все дочерние элементы
               child.visible = false;
               if (child.material) {
-                if (Array.isArray(child.material)) {
-                  child.material.forEach(mat => {
-                    if (mat.opacity !== undefined) {
-                      mat.opacity = 0;
-                    }
-                  });
-                } else {
-                  if (child.material.opacity !== undefined) {
-                    child.material.opacity = 0;
-                  }
-                }
+                MaterialUtils.setMaterialOpacity(child.material, 0, true);
               }
             });
           }
@@ -2517,17 +2216,7 @@ export class DetailModeSystem {
         // Анимируем появление светлячка
         label.firefly.mesh.traverse((child) => {
           if (child.material) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach(mat => {
-                if (mat.opacity !== undefined) {
-                  mat.opacity = easedProgress;
-                }
-              });
-            } else {
-              if (child.material.opacity !== undefined) {
-                child.material.opacity = easedProgress;
-              }
-            }
+            MaterialUtils.setMaterialOpacity(child.material, easedProgress, true);
           }
         });
         label.firefly.mesh.visible = easedProgress > 0;
@@ -2546,17 +2235,7 @@ export class DetailModeSystem {
             label.firefly.mesh.visible = true;
             label.firefly.mesh.traverse((child) => {
               if (child.material) {
-                if (Array.isArray(child.material)) {
-                  child.material.forEach(mat => {
-                    if (mat.opacity !== undefined) {
-                      mat.opacity = 1;
-                    }
-                  });
-                } else {
-                  if (child.material.opacity !== undefined) {
-                    child.material.opacity = 1;
-                  }
-                }
+                MaterialUtils.setMaterialOpacity(child.material, 1, true);
               }
             });
           }
@@ -2672,28 +2351,6 @@ export class DetailModeSystem {
    * @param {number} maxWordsPerLine - Максимальное количество слов в строке (0 или undefined = без ограничений)
    * @returns {string[]} Массив строк
    */
-  splitTextIntoLines(text, maxWordsPerLine) {
-    if (!text || !text.trim()) {
-      return [''];
-    }
-
-    // Если maxWordsPerLine = 0 или undefined, возвращаем весь текст одной строкой
-    if (!maxWordsPerLine || maxWordsPerLine <= 0) {
-      return [text.trim()];
-    }
-
-    // Разбиваем текст на слова по пробелам
-    const words = text.trim().split(/\s+/);
-    const lines = [];
-
-    // Группируем слова в строки по maxWordsPerLine
-    for (let i = 0; i < words.length; i += maxWordsPerLine) {
-      const line = words.slice(i, i + maxWordsPerLine).join(' ');
-      lines.push(line);
-    }
-
-    return lines;
-  }
 
   /**
    * Обновить размер текста в режиме детализации
@@ -2879,7 +2536,7 @@ export class DetailModeSystem {
     context.font = `bold ${fontSize}px Arial`;
 
     // Разбиваем текст на строки
-    const lines = this.splitTextIntoLines(node.text, this.maxWordsPerLine);
+    const lines = TextUtils.splitTextIntoLines(node.text, this.maxWordsPerLine);
 
     // Измеряем ширину каждой строки и находим максимальную
     let maxTextWidth = 0;
@@ -2955,7 +2612,7 @@ export class DetailModeSystem {
     context.font = `bold ${fontSize}px Arial`;
 
     // Разбиваем текст на строки
-    const lines = this.splitTextIntoLines(node.text, this.maxWordsPerLine);
+    const lines = TextUtils.splitTextIntoLines(node.text, this.maxWordsPerLine);
 
     // Измеряем ширину каждой строки и находим максимальную
     let maxTextWidth = 0;
@@ -3034,87 +2691,26 @@ export class DetailModeSystem {
    * Создать текст спрайт для режима детализации (вспомогательный метод)
    */
   createTextSprite(node, isRoot, radius, fontSize) {
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    const lineHeight = fontSize * 1.2; // Межстрочный интервал
-
-    context.font = `bold ${fontSize}px Arial`;
-
-    // Разбиваем текст на строки
-    const lines = this.splitTextIntoLines(node.text, this.maxWordsPerLine);
-
-    // Измеряем ширину каждой строки и находим максимальную
-    let maxTextWidth = 0;
-    const lineWidths = [];
-    lines.forEach(line => {
-      const metrics = context.measureText(line);
-      const width = metrics.width;
-      lineWidths.push(width);
-      if (width > maxTextWidth) {
-        maxTextWidth = width;
-      }
-    });
-
-    // Рассчитываем размеры canvas
-    const textWidth = maxTextWidth;
-    const textHeight = lines.length * lineHeight - (lineHeight - fontSize); // Высота с учетом межстрочного интервала
-
-    // Увеличиваем разрешение canvas для четкости при масштабировании
-    canvas.width = (textWidth + TEXT_PADDING) * TEXT_SCALE_FACTOR;
-    canvas.height = (textHeight + TEXT_PADDING) * TEXT_SCALE_FACTOR;
-
-    // Масштабируем контекст
-    context.scale(TEXT_SCALE_FACTOR, TEXT_SCALE_FACTOR);
-
-    // Перерисовываем текст
-    context.fillStyle = TEXT_COLOR;
-    context.strokeStyle = TEXT_STROKE_COLOR;
-    context.lineWidth = TEXT_STROKE_WIDTH;
-    context.font = `bold ${fontSize}px Arial`;
-    context.textAlign = 'center';
-    context.textBaseline = 'middle'; // Центрируем по вертикали
-
-    // Рисуем каждую строку с правильным вертикальным смещением
-    const centerX = (textWidth + TEXT_PADDING) / 2;
-    const canvasCenterY = (textHeight + TEXT_PADDING) / 2; // Центр canvas по вертикали
-
-    // Рассчитываем начальную позицию Y для первой строки
-    // Чтобы весь текст был центрирован, первая строка должна быть выше центра
-    const totalTextHeight = lines.length * lineHeight - (lineHeight - fontSize);
-    const startY = canvasCenterY - (totalTextHeight / 2) + (fontSize / 2);
-
-    lines.forEach((line, index) => {
-      const y = startY + index * lineHeight;
-      // Рисуем текст с обводкой
-      context.strokeText(line, centerX, y);
-      context.fillText(line, centerX, y);
-    });
-
-    // Создаем текстуру из canvas
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.needsUpdate = true;
-
-    // Создаем спрайт с текстом
-    const spriteMaterial = new THREE.SpriteMaterial({
-      map: texture,
-      transparent: true,
-      alphaTest: 0.1,
-      depthTest: false, // Отключаем depth test для отображения поверх всех объектов
-      depthWrite: false // Отключаем depth write для отображения поверх всех объектов
-    });
-    const sprite = new THREE.Sprite(spriteMaterial);
-
-    // Позиционируем текст над сферой
-    sprite.position.copy(node.position);
-    // Для мобильных устройств увеличиваем расстояние от текста до узла и добавляем отступ слева
+    // Для мобильных устройств используем специальные отступы
     const isMobile = isMobileDevice();
     const textOffset = isMobile ? MOBILE_TEXT_OFFSET_Y : TEXT_OFFSET_Y;
     const textOffsetX = isMobile ? MOBILE_TEXT_OFFSET_X : 0;
-    sprite.position.x += textOffsetX;
-    sprite.position.y += radius + textOffset;
-    sprite.scale.set((canvas.width / TEXT_SCALE_FACTOR) * 1.5, (canvas.height / TEXT_SCALE_FACTOR) * 1.5, 1);
-    sprite.renderOrder = 999; // Текст всегда поверх всех элементов
-
+    
+    // Позиция спрайта
+    const position = node.position.clone();
+    position.x += textOffsetX;
+    position.y += radius + textOffset;
+    
+    // Создаем спрайт через генератор
+    const sprite = TextSpriteGenerator.createTextSprite({
+      text: node.text,
+      fontSize: fontSize,
+      maxWordsPerLine: this.maxWordsPerLine,
+      position: position,
+      scaleMultiplier: 1.5,
+      visible: true
+    });
+    
     return sprite;
   }
   
