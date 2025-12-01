@@ -86,6 +86,7 @@ export const WORD_LABEL_CANVAS_WIDTH = 400;        // Ширина canvas над
 export const WORD_LABEL_CANVAS_HEIGHT = 120;       // Высота canvas надписи
 export const WORD_LABEL_SCALE_MULTIPLIER = 1.2;    // Множитель масштаба надписей
 export const WORD_LABEL_PLACEMENT_RADIUS = 450;    // Радиус размещения надписей вокруг узла
+export const ROOT_WORD_LABEL_PLACEMENT_RADIUS = 1000; // Радиус размещения надписей вокруг рутового узла
 export const WORD_LABEL_FLOAT_AMPLITUDE = 20;      // Амплитуда покачивания надписей (в единицах)
 export const WORD_LABEL_FLOAT_SPEED = 0.8;         // Скорость покачивания надписей
 

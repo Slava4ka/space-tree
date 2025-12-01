@@ -22,6 +22,7 @@ import {
   WORD_LABEL_CANVAS_HEIGHT,
   WORD_LABEL_SCALE_MULTIPLIER,
   WORD_LABEL_PLACEMENT_RADIUS,
+  ROOT_WORD_LABEL_PLACEMENT_RADIUS,
   WORD_LABEL_FLOAT_AMPLITUDE,
   WORD_LABEL_FLOAT_SPEED
 } from '../utils/constants.js';
@@ -2175,18 +2176,19 @@ export class DetailModeSystem {
     // Ограничиваем максимальный радиус, чтобы блоки не выходили за экран
     // Определяем мобильное устройство для уменьшения радиуса
     const isMobile = isMobileDevice();
+    const placementRadius = isRoot ? ROOT_WORD_LABEL_PLACEMENT_RADIUS : WORD_LABEL_PLACEMENT_RADIUS;
     const radiusMultiplierX = isMobile ? 1.2 : 3.2; // Уменьшенный коэффициент для мобильных
     const radiusMultiplierY = isMobile ? 1.7 : 2.7; // Уменьшенный коэффициент для мобильных
-    const maxRadiusX = WORD_LABEL_PLACEMENT_RADIUS * radiusMultiplierX; // Максимальный горизонтальный радиус
-    const maxRadiusY = WORD_LABEL_PLACEMENT_RADIUS * radiusMultiplierY; // Максимальный вертикальный радиус
+    const maxRadiusX = placementRadius * radiusMultiplierX; // Максимальный горизонтальный радиус
+    const maxRadiusY = placementRadius * radiusMultiplierY; // Максимальный вертикальный радиус
     
     let ellipseRadiusX = Math.min(
       maxRadiusX,
-      Math.max(WORD_LABEL_PLACEMENT_RADIUS * 1.1, minDistance / (2 * Math.sin(angleStep / 2)))
+      Math.max(placementRadius * 1.1, minDistance / (2 * Math.sin(angleStep / 2)))
     );
     let ellipseRadiusY = Math.min(
       maxRadiusY,
-      Math.max(WORD_LABEL_PLACEMENT_RADIUS * 0.85, minDistance / (2 * Math.sin(angleStep / 2)) * 0.75)
+      Math.max(placementRadius * 0.85, minDistance / (2 * Math.sin(angleStep / 2)) * 0.75)
     );
     
     // Проверяем расстояние между соседними надписями на всех позициях
