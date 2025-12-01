@@ -2156,8 +2156,8 @@ export class DetailModeSystem {
     const maxWordHeight = WORD_LABEL_CANVAS_HEIGHT * WORD_LABEL_SCALE_MULTIPLIER;
 
     // Минимальное расстояние между центрами надписей для предотвращения пересечения
-    // Увеличиваем запас до 50% для гарантированного отсутствия пересечения
-    const minDistance = Math.max(maxWordWidth, maxWordHeight) * 1.5;
+    // Уменьшаем запас для более плотного расположения меток
+    const minDistance = Math.max(maxWordWidth, maxWordHeight) * 1.1;
 
     // Рассчитываем текущий размер узла в детальном режиме
     const baseNodeRadius = isRoot ? this.rootRadius : this.nodeRadius;
@@ -2170,8 +2170,38 @@ export class DetailModeSystem {
     const minRadiusFromNode = scaledNodeRadius + nodeRadiusOffset;
 
     // Рассчитываем минимальный радиус для равномерного распределения
+    // Исключаем верхний сектор 90° чтобы не загораживать основной текст узла
+    // Основной текст узла находится по оси Y (вверх в мировой системе координат)
+    // Нужно определить, какое направление на плоскости меток соответствует "вверх"
+    // planeUp - это вектор "вверх" на плоскости меток
+    // Определяем угол, где planeUp максимален (где метки будут сверху)
     const wordCount = technologies.length;
-    const angleStep = (Math.PI * 2) / wordCount;
+    
+    // Определяем направление "вверх" в координатах плоскости
+    // Основной текст находится по оси Y (0, 1, 0) в мировых координатах
+    // Проецируем это направление на плоскость меток
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const upOnPlane = worldUp.clone().sub(planeNormal.clone().multiplyScalar(worldUp.dot(planeNormal))).normalize();
+    
+    // Находим угол, где upOnPlane максимален
+    // upOnPlane = right * cos(angle) + planeUp * sin(angle)
+    // Где angle - это угол от right к planeUp
+    const upDotRight = upOnPlane.dot(right);
+    const upDotPlaneUp = upOnPlane.dot(planeUp);
+    const topAngle = Math.atan2(upDotPlaneUp, upDotRight); // Угол, где находится "верх"
+    
+    // Исключаем сектор 90° вокруг topAngle, но сдвигаем центр немного вправо
+    // чтобы слева было больше доступной зоны
+    const excludedSectorSize = Math.PI / 2; // 90°
+    const centerOffset = Math.PI / 12; // Сдвигаем центр на 15° вправо
+    const adjustedTopAngle = topAngle + centerOffset;
+    const excludedSectorStart = adjustedTopAngle - excludedSectorSize / 2;
+    const excludedSectorEnd = adjustedTopAngle + excludedSectorSize / 2;
+    const availableSectorSize = Math.PI * 2 - excludedSectorSize; // 270°
+    
+    // Начинаем сразу после исключенного сектора
+    const startAngle = excludedSectorEnd;
+    const angleStep = availableSectorSize / wordCount;
     
     // Функция для расчета расстояния между двумя точками на круге
     const distanceOnCircle = (angle1, angle2, radius) => {
@@ -2186,7 +2216,8 @@ export class DetailModeSystem {
     // Определяем мобильное устройство для уменьшения радиуса
     const isMobile = isMobileDevice();
     const placementRadius = isRoot ? ROOT_WORD_LABEL_PLACEMENT_RADIUS : WORD_LABEL_PLACEMENT_RADIUS;
-    const radiusMultiplier = isMobile ? 1.5 : 3.0; // Множитель для максимального радиуса
+    // Увеличиваем множитель, чтобы метки влезали в экран после сдвига исключенного сектора
+    const radiusMultiplier = isMobile ? 1.8 : 4.0; // Множитель для максимального радиуса
     const maxRadius = placementRadius * radiusMultiplier; // Максимальный радиус
     
     // Рассчитываем минимальный радиус на основе расстояния между надписями
@@ -2196,8 +2227,14 @@ export class DetailModeSystem {
     // Это гарантирует, что надписи не залазят на узел даже при малом количестве надписей
     const minRadius = Math.max(minRadiusFromNode, minRadiusFromSpacing, placementRadius * 1.1);
     
+    // Используем maxRadius напрямую, чтобы radiusMultiplier всегда работал
+    // maxRadius должен быть основным ограничением, но не должен быть меньше minRadius
+    // Если maxRadius меньше minRadius, это означает проблему с настройками, но все равно используем maxRadius
+    const effectiveMaxRadius = maxRadius; // Используем maxRadius напрямую, чтобы radiusMultiplier всегда работал
+    
     // Начинаем с минимального радиуса, но он может увеличиться в цикле, если нужно больше места между надписями
-    let circleRadius = minRadius;
+    // Используем maxRadius для начального значения, если он больше minRadius, чтобы radiusMultiplier работал
+    let circleRadius = Math.max(minRadius, Math.min(effectiveMaxRadius, effectiveMaxRadius * 0.5)); // Начинаем с середины между minRadius и maxRadius
     
     // Проверяем расстояние между соседними надписями на всех позициях
     let allDistancesValid = false;
@@ -2205,17 +2242,20 @@ export class DetailModeSystem {
     while (!allDistancesValid && iterations < 10) {
       allDistancesValid = true;
       for (let i = 0; i < wordCount; i++) {
-        const angle1 = i * angleStep;
-        const angle2 = ((i + 1) % wordCount) * angleStep;
+        const angle1 = startAngle + i * angleStep;
+        // Для последней метки следующая - первая метка (через границу доступного сектора)
+        const nextIndex = (i + 1) % wordCount;
+        const angle2 = startAngle + nextIndex * angleStep;
         const dist = distanceOnCircle(angle1, angle2, circleRadius);
         
         if (dist < minDistance) {
           allDistancesValid = false;
-          // Увеличиваем радиус пропорционально, но не превышаем максимум и не опускаемся ниже минимума
+          // Увеличиваем радиус пропорционально, но не превышаем максимум
+          // Не ограничиваем снизу minRadius здесь, чтобы радиус мог увеличиваться до maxRadius
           const scale = minDistance / dist;
-          const newRadius = Math.max(minRadius, Math.min(maxRadius, circleRadius * scale * 1.05));
+          const newRadius = Math.min(effectiveMaxRadius, circleRadius * scale * 1.1);
           
-          if (newRadius === maxRadius && dist < minDistance * 0.9) {
+          if (newRadius >= effectiveMaxRadius * 0.99 && dist < minDistance * 0.9) {
             // Если достигли максимума, но расстояние все еще недостаточно, увеличиваем minDistance
             break;
           }
@@ -2226,11 +2266,46 @@ export class DetailModeSystem {
       }
       iterations++;
     }
+    
+    // Убеждаемся, что радиус не меньше минимума (чтобы метки не залазили на узел) и не больше максимума
+    circleRadius = Math.max(minRadius, Math.min(effectiveMaxRadius, circleRadius));
 
     // Создаем метки слов
     technologies.forEach((technology, index) => {
-      // Вычисляем позицию слова равномерно по кругу
-      const angle = index * angleStep;
+      // Вычисляем позицию слова равномерно по кругу, исключая верхний сектор
+      let angle = startAngle + index * angleStep;
+      
+      // Нормализуем угол в диапазон [0, 2π]
+      angle = ((angle % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+      
+      // Нормализуем границы исключенного сектора
+      let normalizedStart = ((excludedSectorStart % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+      let normalizedEnd = ((excludedSectorEnd % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+      
+      // Проверяем, не попадает ли угол в исключенный сектор
+      let inExcludedSector = false;
+      if (normalizedStart <= normalizedEnd) {
+        // Обычный случай: сектор не пересекает границу 0/2π
+        inExcludedSector = angle >= normalizedStart && angle <= normalizedEnd;
+      } else {
+        // Сектор пересекает границу 0/2π
+        inExcludedSector = angle >= normalizedStart || angle <= normalizedEnd;
+      }
+      
+      if (inExcludedSector) {
+        // Если угол в исключенном секторе, переназначаем на ближайшую границу
+        const distToStart = Math.min(
+          Math.abs(angle - normalizedStart),
+          Math.abs(angle - (normalizedStart + Math.PI * 2)),
+          Math.abs(angle - (normalizedStart - Math.PI * 2))
+        );
+        const distToEnd = Math.min(
+          Math.abs(angle - normalizedEnd),
+          Math.abs(angle - (normalizedEnd + Math.PI * 2)),
+          Math.abs(angle - (normalizedEnd - Math.PI * 2))
+        );
+        angle = distToStart < distToEnd ? normalizedStart : normalizedEnd;
+      }
       
       const circleX = Math.cos(angle) * circleRadius;
       const circleY = Math.sin(angle) * circleRadius;
