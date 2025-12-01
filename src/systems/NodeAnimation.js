@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { ROOT_RADIUS, NODE_RADIUS, TEXT_OFFSET_Y } from '../utils/constants.js';
+import { ROOT_RADIUS, NODE_RADIUS, TEXT_OFFSET_Y, MOBILE_TEXT_OFFSET_Y, MOBILE_TEXT_OFFSET_X } from '../utils/constants.js';
+import { isMobileDevice } from '../utils/DeviceUtils.js';
 
 /**
  * Класс для управления анимациями узлов
@@ -268,13 +269,23 @@ export class NodeAnimation {
      * Это гарантирует, что спрайты всегда синхронизированы с узлами
      */
     updateTextSprites() {
+        const isDetailMode = typeof this.isDetailMode === 'function' ? this.isDetailMode() : this.isDetailMode;
+        const detailModeNode = typeof this.detailModeNode === 'function' ? this.detailModeNode() : this.detailModeNode;
+        const isMobile = isMobileDevice();
+        
         this.nodeMeshes.forEach(nodeData => {
             if (nodeData.textSprite && nodeData.mesh && !nodeData.isPushing) {
                 const nodeRadius = (nodeData.node.level === 0 ? this.rootRadius : this.nodeRadius) * nodeData.mesh.scale.y;
+                
+                // Для мобильных устройств в детальном режиме увеличиваем расстояние от текста до узла и добавляем отступ слева
+                const isDetailModeNode = isDetailMode && detailModeNode && nodeData.node.id === detailModeNode.node.id;
+                const textOffset = (isMobile && isDetailModeNode) ? MOBILE_TEXT_OFFSET_Y : TEXT_OFFSET_Y;
+                const textOffsetX = (isMobile && isDetailModeNode) ? MOBILE_TEXT_OFFSET_X : 0;
+                
                 // Обновляем позицию спрайта, чтобы она точно соответствовала позиции узла
                 nodeData.textSprite.position.set(
-                    nodeData.mesh.position.x,
-                    nodeData.mesh.position.y + nodeRadius + TEXT_OFFSET_Y,
+                    nodeData.mesh.position.x + textOffsetX,
+                    nodeData.mesh.position.y + nodeRadius + textOffset,
                     nodeData.mesh.position.z
                 );
                 // Принудительно обновляем матрицу спрайта для корректного отображения
